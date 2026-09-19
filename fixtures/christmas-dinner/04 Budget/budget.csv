@@ -1,0 +1,6 @@
+category,item,quantity,unit_usd,subtotal_usd,status,source
+Venue,Garden Hall Main Hall hire,1,7200.00,7200.00,committed,garden-hall-quote.md
+Catering,Shah Halal seated dinner (includes 600.00 deposit),240,24.00,5760.00,committed,shah-halal-agreement.md
+Staff,Event staff (1 per 60 guests policy),4,300.00,1200.00,estimate,brief.md
+Equipment,BrightStage AV rental,1,1800.00,1800.00,committed,av-rental.md
+Total,,,,15960.00,,
