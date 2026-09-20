@@ -150,6 +150,7 @@ describe("Shah Halal → CAVA", () => {
     await approveAll(db, wf.id);
     w = getWorkflow(db, wf.id)!;
     expect(w.status).toBe("completed");
+    expect(proposalsOf(db, wf.id).filter((p) => p.decision === "stale")).toEqual([]);
     expect(forecast(db)).toBe(1_728_000);
     expect(lines(db).find((l) => l.engagementId === "eng_sample_cava")!.commitmentStatus).toBe("committed");
     // no duplicate sends

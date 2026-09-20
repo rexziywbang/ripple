@@ -258,9 +258,11 @@ export function answerClarification(db: Db, workflowId: string, answers: Record<
   const wf = getWorkflow(db, workflowId);
   if (!wf) throw new Error("workflow not found");
   if (wf.status !== "needs_input") throw new Error("workflow is not waiting for input");
-  const merged = { ...wf.answers, ...answers };
-  setWorkflow(db, wf.id, { answers: merged, status: "planning", clarification: null });
-  appendEvent(db, wf.projectId, wf.id, "workflow.answered", `Clarified: ${Object.values(answers).join("; ")}`, { stage: "understand" });
+  const { rephrase, ...rest } = answers;
+  const merged = { ...wf.answers, ...rest };
+  const request = rephrase?.trim() ? rephrase.trim() : wf.request;
+  setWorkflow(db, wf.id, { answers: merged, request, status: "planning", clarification: null });
+  appendEvent(db, wf.projectId, wf.id, "workflow.answered", rephrase ? `Rephrased as “${request}”` : `Clarified: ${Object.values(rest).join("; ")}`, { stage: "understand" });
   enqueueJob(db, "workflow.plan", { workflowId: wf.id }, { idempotencyKey: `plan:${wf.id}:${Object.keys(merged).length + 1}:${now()}` });
   return getWorkflow(db, wf.id)!;
 }
@@ -281,8 +283,12 @@ export function submitReview(db: Db, workflowId: string, decisions: Decision[], 
   for (const d of decisions) {
     const p = db.select().from(s.proposals).where(and(eq(s.proposals.id, d.proposalId), eq(s.proposals.workflowId, workflowId))).get();
     if (!p || p.decision !== "pending") continue;
-    // stale check at decision time: facts moved since planning
-    const stale = Object.entries(p.factDeps).find(([k, v]) => (versions[k] ?? 0) !== v);
+    // stale check at decision time: facts moved since planning (versions bumped by this very workflow are fine)
+    const stale = Object.entries(p.factDeps).find(([k, v]) => {
+      if ((versions[k] ?? 0) === v) return false;
+      const f = facts.find((x) => x.key === k);
+      return !changedByWorkflow(f, wf.id);
+    });
     if (stale && d.decision === "approve") {
       db.update(s.proposals).set({ decision: "stale", decisionReason: `${stale[0]} changed (v${stale[1]} → v${versions[stale[0]]}) after this was proposed. Re-run the request to get a fresh proposal.`, updatedAt: t }).where(eq(s.proposals.id, p.id)).run();
       if (p.taskId) db.update(s.tasks).set({ status: "superseded", detail: "Stale: facts changed since planning.", updatedAt: t }).where(eq(s.tasks.id, p.taskId)).run();
@@ -395,6 +401,7 @@ async function stepProposal(db: Db, wf: s.Workflow, p: s.Proposal, task: s.Task)
     if (req.decision === "pending") return { status: "waiting_approval", detail: `Waiting for a decision on “${req.title}”.` };
     const reqTask = req.taskId ? db.select().from(s.tasks).where(eq(s.tasks.id, req.taskId)).get() : undefined;
     if (reqTask?.status === "failed") return { status: "blocked", detail: `Held: “${req.title}” failed and needs attention first.` };
+    if (reqTask?.status === "blocked" || reqTask?.status === "skipped" || reqTask?.status === "superseded") return { status: "blocked", detail: `Not applied: depends on “${req.title}”, which was not applied.` };
     return { status: "waiting_external", detail: `Waiting for “${req.title}” to complete.` };
   }
   if (p.waitsFor && !conditionSatisfied(db, p.waitsFor)) {
@@ -406,8 +413,7 @@ async function stepProposal(db: Db, wf: s.Workflow, p: s.Proposal, task: s.Task)
   for (const [k, v] of Object.entries(p.factDeps)) {
     const f = facts.find((x) => x.key === k);
     const cur = f?.version ?? 0;
-    const ownChange = f?.sourceRefs.some((r) => r.type === "workflow" && r.id === wf.id);
-    if (cur !== v && !ownChange) {
+    if (cur !== v && !changedByWorkflow(f, wf.id)) {
       const t = now();
       db.update(s.proposals).set({ decision: "stale", decisionReason: `${k} changed (v${v} → v${cur}) after approval; not applied.`, updatedAt: t }).where(eq(s.proposals.id, p.id)).run();
       appendEvent(db, wf.projectId, wf.id, "proposal.stale", `Did not apply “${p.title}”: ${k} changed after approval. Re-run the request for a fresh proposal.`, { stage: "apply" });
@@ -436,6 +442,12 @@ async function stepProposal(db: Db, wf: s.Workflow, p: s.Proposal, task: s.Task)
     appendEvent(db, wf.projectId, wf.id, "proposal.failed", `${p.title}: ${msg}`, { stage: "apply", data: { proposalId: p.id } });
     return { status: "failed", detail: msg };
   }
+}
+
+/** True when the latest change to a fact was made by the given workflow. */
+function changedByWorkflow(f: s.ProjectFact | undefined, workflowId: string): boolean {
+  const latest = f?.sourceRefs[0];
+  return latest?.type === "workflow" && latest.id === workflowId;
 }
 
 function markApplied(db: Db, p: s.Proposal) {

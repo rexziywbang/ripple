@@ -16,16 +16,18 @@ function eventTone(kind: string): Tone {
   return "neutral";
 }
 
+const DOT: Record<Tone, string> = { neutral: "bg-border", accent: "bg-accent", warn: "bg-warn", danger: "bg-danger", info: "bg-info" };
+
 export function ActivityPanel({ snap, refresh, onSelectWorkflow }: { snap: ProjectSnapshot; refresh: () => Promise<void>; onSelectWorkflow: (id: string) => void }) {
   const [tab, setTab] = useState<Tab>("activity");
   const inbound = snap.messages.filter((m) => m.direction === "inbound").length;
   return (
-    <Card>
-      <div role="tablist" aria-label="Activity" className="mb-3 flex gap-1 border-b border-border">
+    <Card className="min-w-0">
+      <div role="tablist" aria-label="Activity" className="mb-3 flex gap-1 overflow-x-auto border-b border-border">
         {(
           [
-            ["activity", `Activity (${snap.events.length})`],
-            ["inbox", `Messages (${snap.messages.length}${inbound ? `, ${inbound} in` : ""})`],
+            ["activity", "Activity"],
+            ["inbox", `Messages${snap.messages.length ? ` (${snap.messages.length}${inbound ? `, ${inbound} in` : ""})` : ""}`],
             ["demo", "Demo controls"],
           ] as [Tab, string][]
         ).map(([id, label]) => (
@@ -47,9 +49,9 @@ function EventList({ events, onSelectWorkflow }: { events: WorkflowEvent[]; onSe
     <ol className="max-h-[420px] space-y-1.5 overflow-auto text-sm" role="tabpanel">
       {events.map((e) => (
         <li key={e.id} className="flex items-start gap-2">
-          <span className="w-[74px] shrink-0 pt-0.5 font-mono text-[11px] text-muted">{formatTime(e.createdAt).split(", ").pop()}</span>
-          <Badge tone={eventTone(e.type)}>{e.type.replace(/[._]/g, " ")}</Badge>
-          <span className="min-w-0 flex-1">
+          <span className="w-[60px] shrink-0 pt-0.5 font-mono text-[11px] text-muted">{formatTime(e.createdAt).split(", ").pop()?.slice(0, 5)}</span>
+          <span aria-label={e.type.replace(/[._]/g, " ")} title={e.type.replace(/[._]/g, " ")} className={`mt-1.5 size-2 shrink-0 rounded-full ${DOT[eventTone(e.type)]}`} />
+          <span className="min-w-0 flex-1 break-words">
             {e.workflowId ? (
               <button onClick={() => onSelectWorkflow(e.workflowId!)} className="text-left hover:underline">
                 {e.message}

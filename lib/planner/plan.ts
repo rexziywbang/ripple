@@ -1117,7 +1117,14 @@ export function planConsequences(ctx: ProjectContext, intent: ChangeIntent, toda
       if (ran.has(rule.id)) continue;
       if (!rule.inputs.some((k) => p.changed.has(k))) continue;
       ran.add(rule.id);
+      const before = p.drafts.length;
       rule.run(p);
+      // A rule's outputs follow the fact changes that triggered it.
+      const triggers = p.drafts.slice(0, before).filter((d) => d.kind === "fact" && !d.conditional && rule.inputs.includes((d.target as { key: string }).key)).map((d) => d.key);
+      for (const d of p.drafts.slice(before)) {
+        if (d.informational) continue;
+        for (const k of triggers) if (k !== d.key && !d.requires.includes(k)) d.requires.push(k);
+      }
       progressed = true;
     }
     if (!progressed) break;
@@ -1135,6 +1142,17 @@ export function planConsequences(ctx: ProjectContext, intent: ChangeIntent, toda
       return d ? { ...i, startLocal: d.after as string } : i;
     });
     p.fileUpdate("06 Staff/schedule.csv", renderScheduleCsv(items), "Update schedule.csv projection", "Run-of-show projection in the event folder.", ["schedule.dinner_start", "event.time"], { requires: p.drafts.filter((d) => d.kind === "schedule").map((d) => d.key) });
+  }
+
+  // Every consequence that reads a fact this plan changes must wait for that fact update to be applied,
+  // so skipping the root change blocks its dependents instead of applying them against the old value.
+  const factDraftByKey = new Map(p.drafts.filter((d) => d.kind === "fact" && !d.conditional).map((d) => [(d.target as { key: string }).key, d.key]));
+  for (const d of p.drafts) {
+    if (d.informational) continue;
+    for (const k of d.factDepKeys) {
+      const req = factDraftByKey.get(k);
+      if (req && req !== d.key && !d.requires.includes(req)) d.requires.push(req);
+    }
   }
 
   const changedFactKeys = [...p.changed].filter((k) => k !== "budget.forecast");

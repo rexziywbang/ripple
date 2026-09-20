@@ -7,6 +7,7 @@ import { AREAS, AREA_BY_ID, type AreaId } from "@/lib/domain/areas";
 import { formatFactValue, humanFactKey } from "@/lib/domain/facts";
 import { formatCents } from "@/lib/domain/money";
 import { api } from "./api";
+import { InviteCard } from "./invite-card";
 import { Badge, Button, Card, CostBadge, Empty, SectionTitle, type Tone } from "./ui";
 
 const FACT_TONE: Record<ProjectFact["status"], Tone> = { confirmed: "accent", tentative: "warn", unknown: "danger" };
@@ -20,19 +21,20 @@ export function AreaTiles({ snap, selected, onSelect }: { snap: ProjectSnapshot;
         const tentative = facts.filter((f) => f.status === "tentative").length;
         const active = snap.workflows.filter((w) => !["completed", "superseded", "failed"].includes(w.status) && (w.area === a.id || w.proposals.some((p) => p.area === a.id && p.decision === "pending")));
         const isSel = a.id === selected;
+        const dot = active.length ? "bg-info ripple-active" : unknown ? "bg-danger" : tentative ? "bg-warn" : "bg-accent";
+        const hint = active.length ? `${active.length} change${active.length === 1 ? "" : "s"} in progress` : unknown ? `${unknown} unknown` : tentative ? `${tentative} tentative` : "settled";
         return (
           <button
             key={a.id}
             onClick={() => onSelect(a.id)}
             aria-pressed={isSel}
-            className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors ${isSel ? "border-accent bg-accent-soft" : "border-border bg-surface hover:bg-border/30"}`}
+            title={hint}
+            className={`flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-left transition-colors ${isSel ? "border-accent bg-accent-soft" : "border-border bg-surface hover:bg-border/30"}`}
           >
-            <span className="text-sm font-semibold">{a.short}</span>
-            <span className="flex flex-wrap gap-1">
-              {active.length > 0 && <Badge tone="info">{active.length} active</Badge>}
-              {unknown > 0 && <Badge tone="danger">{unknown} unknown</Badge>}
-              {tentative > 0 && <Badge tone="warn">{tentative} tentative</Badge>}
-              {active.length === 0 && unknown === 0 && tentative === 0 && <Badge tone="neutral">settled</Badge>}
+            <span aria-hidden className={`size-2 shrink-0 rounded-full ${dot}`} />
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold">{a.short}</span>
+              <span className="block truncate text-[11px] text-muted">{hint}</span>
             </span>
           </button>
         );
@@ -44,12 +46,12 @@ export function AreaTiles({ snap, selected, onSelect }: { snap: ProjectSnapshot;
 function SourceLinks({ refs, snap, onOpen }: { refs: ProjectFact["sourceRefs"]; snap: ProjectSnapshot; onOpen: (id: string) => void }) {
   if (!refs.length) return null;
   return (
-    <span className="flex flex-wrap gap-1">
-      {refs.map((r, i) => {
+    <span className="flex min-w-0 flex-wrap gap-1">
+      {refs.slice(0, 3).map((r, i) => {
         if (r.type === "document" && r.id) {
           const doc = snap.documents.find((d) => d.id === r.id);
           return (
-            <button key={i} onClick={() => onOpen(r.id!)} className="rounded bg-border/50 px-1.5 py-0.5 text-[11px] hover:bg-border" title={r.excerpt ?? doc?.path}>
+            <button key={i} onClick={() => onOpen(r.id!)} className="max-w-full truncate rounded bg-border/50 px-1.5 py-0.5 text-[11px] hover:bg-border" title={r.excerpt ?? doc?.path}>
               {doc?.path.split("/").pop() ?? "document"}
             </button>
           );
@@ -57,7 +59,7 @@ function SourceLinks({ refs, snap, onOpen }: { refs: ProjectFact["sourceRefs"]; 
         if (r.type === "message") {
           const m = snap.messages.find((x) => x.id === r.id);
           return (
-            <span key={i} className="rounded bg-border/50 px-1.5 py-0.5 text-[11px]" title={r.excerpt}>
+            <span key={i} className="max-w-full truncate rounded bg-border/50 px-1.5 py-0.5 text-[11px]" title={r.excerpt}>
               email: {m?.subject ?? "message"}
             </span>
           );
@@ -68,6 +70,7 @@ function SourceLinks({ refs, snap, onOpen }: { refs: ProjectFact["sourceRefs"]; 
           </span>
         );
       })}
+      {refs.length > 3 && <span className="text-[11px] text-muted">+{refs.length - 3}</span>}
     </span>
   );
 }
@@ -127,12 +130,11 @@ export function AreaPanel({ snap, area, refresh, onWorkflowCreated }: { snap: Pr
   }
 
   return (
-    <Card aria-labelledby="area-title">
+    <Card aria-labelledby="area-title" className="min-w-0">
       <div className="mb-3">
         <h2 id="area-title" className="text-lg font-semibold">
           {def.title}
         </h2>
-        <p className="text-sm text-muted">{def.description}</p>
       </div>
 
       <form onSubmit={submit} className="mb-4 grid gap-2">
@@ -155,7 +157,7 @@ export function AreaPanel({ snap, area, refresh, onWorkflowCreated }: { snap: Pr
           <Button type="submit" variant="primary" disabled={busy || closed || !text.trim()}>
             {busy ? "Capturing…" : "Follow the consequences"}
           </Button>
-          <span className="text-xs text-muted">Ripple looks beyond this area: a change here can touch every other area.</span>
+          <span className="text-xs text-muted">Ripple keeps working in the background; nothing is applied or sent until you review it.</span>
         </div>
         <div className="flex flex-wrap gap-1.5" aria-label="Example prompts">
           {def.examples.map((ex) => (
@@ -172,50 +174,49 @@ export function AreaPanel({ snap, area, refresh, onWorkflowCreated }: { snap: Pr
       </form>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div>
-          <SectionTitle>Facts</SectionTitle>
+        <div className="min-w-0">
+          <SectionTitle>Current plan</SectionTitle>
           {facts.length === 0 ? (
             <Empty>No facts recorded for this area yet.</Empty>
           ) : (
             <dl className="divide-y divide-border text-sm">
               {facts.map((f) => (
-                <div key={f.key} className="grid gap-0.5 py-2">
+                <div key={f.key} className="grid min-w-0 gap-0.5 py-2">
                   <div className="flex items-center justify-between gap-2">
-                    <dt className="text-muted">{humanFactKey(f.key)}</dt>
-                    <Badge tone={FACT_TONE[f.status]}>
-                      {f.status} · v{f.version}
-                    </Badge>
+                    <dt className="truncate text-muted">{humanFactKey(f.key)}</dt>
+                    {f.status !== "confirmed" && <Badge tone={FACT_TONE[f.status]}>{f.status}</Badge>}
                   </div>
-                  <dd className="font-medium">{formatFactValue(f.key, f.value)}</dd>
+                  <dd className="break-words font-medium" title={`Version ${f.version}`}>
+                    {formatFactValue(f.key, f.value)}
+                  </dd>
                   <SourceLinks refs={f.sourceRefs} snap={snap} onOpen={setOpenDoc} />
                 </div>
               ))}
             </dl>
           )}
         </div>
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <AreaDetails snap={snap} area={area} />
-          <div>
-            <SectionTitle>Linked files</SectionTitle>
-            {docs.length === 0 ? (
-              <Empty>No files linked to this area.</Empty>
-            ) : (
-              <ul className="space-y-1 text-sm">
+          {docs.length > 0 && (
+            <details className="text-sm">
+              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted">
+                {docs.length} linked file{docs.length === 1 ? "" : "s"}
+              </summary>
+              <ul className="mt-2 space-y-1">
                 {docs.map((d) => (
-                  <li key={d.id} className="flex items-center justify-between gap-2">
-                    <button onClick={() => setOpenDoc(d.id)} className="truncate text-left font-mono text-xs hover:underline">
-                      {d.path}
+                  <li key={d.id} className="flex min-w-0 items-center justify-between gap-2">
+                    <button onClick={() => setOpenDoc(d.id)} className="min-w-0 truncate text-left font-mono text-xs hover:underline" title={d.path}>
+                      {d.path.split("/").pop()}
                     </button>
-                    <span className="flex gap-1">
-                      {d.kind === "projection" && <Badge tone="info">written by Ripple</Badge>}
-                      {!d.supported && <Badge tone="neutral">unsupported type</Badge>}
-                      <Badge tone="neutral">{d.revision ?? "no rev"}</Badge>
+                    <span className="flex shrink-0 gap-1">
+                      {d.kind === "projection" && <Badge tone="info">by Ripple</Badge>}
+                      {!d.supported && <Badge tone="neutral">unsupported</Badge>}
                     </span>
                   </li>
                 ))}
               </ul>
-            )}
-          </div>
+            </details>
+          )}
         </div>
       </div>
       {openDoc && <DocumentViewer projectId={snap.project.id} docId={openDoc} onClose={() => setOpenDoc(null)} />}
@@ -343,11 +344,10 @@ function AreaDetails({ snap, area }: { snap: ProjectSnapshot; area: AreaId }) {
     );
   }
   if (area === "guests") {
-    const inv = snap.facts.find((f) => f.key === "invitation.text");
     return (
       <div>
-        <SectionTitle>Current invitation</SectionTitle>
-        {inv?.value ? <pre className="whitespace-pre-wrap rounded-lg bg-background p-3 text-xs">{String(inv.value)}</pre> : <Empty>No invitation text yet.</Empty>}
+        <SectionTitle>Invitation</SectionTitle>
+        <InviteCard snap={snap} />
       </div>
     );
   }

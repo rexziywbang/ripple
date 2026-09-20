@@ -37,12 +37,18 @@ test.describe("Ripple critical journeys", () => {
     await page.getByRole("button", { name: "Follow the consequences" }).click();
     await expect(page.getByRole("list", { name: "Progress" })).toBeVisible();
     await expect(page.getByText(/Ready to review/).first()).toBeVisible();
+    // Rows are collapsed by default; checks live behind a disclosure.
+    await page.getByRole("button", { name: /checks against your sources/ }).click();
     await expect(page.getByText(/300 exceeds this by 40/).first()).toBeVisible();
     await expect(page.getByText(/Staff required: 4 → 5/).first()).toBeVisible();
     await expect(page.getByText(/Catering forecast: 300 × \$24/).first()).toBeVisible();
+    // Expanding a row reveals its rationale without leaving the page.
+    const staffRow = page.getByRole("button", { name: /Staff required: 4 → 5/ });
+    await staffRow.click();
+    await expect(staffRow).toHaveAttribute("aria-expanded", "true");
     // The forecast on the dashboard has not moved yet: nothing applies before approval.
     await expect(page.getByText("$15,960").first()).toBeVisible();
-    await page.getByRole("button", { name: /^Apply \d+ of \d+/ }).click();
+    await page.getByRole("button", { name: /^Apply \d+ update/ }).click();
     await expect(page.getByRole("heading", { name: /\d+ Completed/ })).toBeVisible();
     await expect(page.getByText("300", { exact: true }).first()).toBeVisible();
   });
@@ -57,7 +63,8 @@ test.describe("Ripple critical journeys", () => {
     await expect(page.getByText(/quote from CAVA/).first()).toBeVisible();
     await expect(page.getByText(/\$600/).first()).toBeVisible();
     await expect(page.getByText("Sunk").first()).toBeVisible();
-    await page.getByRole("button", { name: /^Apply \d+ of \d+/ }).click();
+    // The primary action says what it really does: applies updates and sends messages.
+    await page.getByRole("button", { name: /^Apply \d+ updates? · send \d+ messages?/ }).click();
     await expect(page.getByText(/Simulated send/).first()).toBeVisible();
     await expect(page.getByText(/Waiting/).first()).toBeVisible();
     await expect(page.getByText(/CAVA .*quote/).first()).toBeVisible();
@@ -78,6 +85,27 @@ test.describe("Ripple critical journeys", () => {
     await expect(page.getByText("$17,280").first()).toBeVisible();
     await expect(page.getByText(/Sunk/).first()).toBeVisible();
     await expect(page.getByText(/Accept the CAVA/).first()).toBeVisible();
+  });
+
+  test("an unrecognised request can be rephrased in place and re-planned", async ({ page }) => {
+    await page.goto(`/projects/${SAMPLE}?area=guests`);
+    await page.getByLabel("What changed?").fill("w 300");
+    await page.getByRole("button", { name: "Follow the consequences" }).click();
+    await expect(page.getByText("Needs your answer").first()).toBeVisible();
+    await page.getByLabel("Rephrase your request").fill("Attendance is now 300.");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(page.getByText(/Ready to review/).first()).toBeVisible();
+    await expect(page.getByText(/Attendance is now 300/).first()).toBeVisible();
+    await expect(page.getByText(/Staff required: 4 → 5/).first()).toBeVisible();
+  });
+
+  test("the guests area shows the invitation as a guest-facing invite card", async ({ page }) => {
+    await page.goto(`/projects/${SAMPLE}?area=guests`);
+    const card = page.getByRole("article", { name: "Invitation preview" });
+    await expect(card).toBeVisible();
+    await expect(card.getByRole("heading", { name: "Northwind Christmas Dinner" })).toBeVisible();
+    await expect(card.getByText(/Garden Hall/).first()).toBeVisible();
+    await expect(card.getByRole("button", { name: "Going" })).toBeVisible();
   });
 
   test("evidence in an inbound email never becomes a command", async ({ page }) => {

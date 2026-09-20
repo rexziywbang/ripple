@@ -96,7 +96,9 @@ describe("budget, staff, equipment, schedule, format, date", () => {
     const props = proposalsOf(db, wf.id);
     const sched = props.filter((p) => p.kind === "schedule").map((p) => p.title);
     expect(sched).toEqual(expect.arrayContaining([expect.stringMatching(/dinner.*19:00 → 19:30/i), expect.stringMatching(/Close: 23:00 → 23:30/)]));
-    for (const k of ["email", "staff_notice", "invitation"]) expect(props.find((p) => p.kind === k)!.requires.length).toBe(4);
+    const schedIds = props.filter((p) => p.kind === "schedule").map((p) => p.id);
+    expect(schedIds).toHaveLength(4);
+    for (const k of ["email", "staff_notice", "invitation"]) expect(props.find((p) => p.kind === k)!.requires).toEqual(expect.arrayContaining(schedIds));
     await approveAll(db, wf.id);
     const dinner = db.select().from(s.scheduleItems).where(and(eq(s.scheduleItems.projectId, PID), eq(s.scheduleItems.projectId, PID))).all().find((i) => /dinner/i.test(i.title))!;
     expect(dinner.startLocal).toBe("19:30");
@@ -143,6 +145,32 @@ describe("dependencies and skipped proposals", () => {
     expect(engagement(db, "eng_sample_gardenhall").cancellationState).toBe("none");
     expect(forecast(db)).toBe(1596000);
     expect(getWorkflow(db, wf.id)!.status).toBe("partially_complete");
+  });
+
+  it("skipping the root attendance change blocks every consequence that was derived from it", async () => {
+    const db = freshDb();
+    const wf = await request(db, "Attendance is now 300", "guests");
+    const props = pending(db, wf.id);
+    const root = props.find((p) => p.kind === "fact" && p.target.type === "fact" && p.target.key === "attendance.expected")!;
+    const dependsOnRoot = (p: s.Proposal, seen = new Set<string>()): boolean => p.requires.some((id) => id === root.id || (!seen.has(id) && (seen.add(id), dependsOnRoot(props.find((x) => x.id === id)!, seen))));
+    for (const p of props) if (p.id !== root.id) expect(dependsOnRoot(p)).toBe(true);
+    submitReview(db, wf.id, props.map((p) => ({ proposalId: p.id, decision: p.id === root.id ? "reject" : "approve" })));
+    await run(db);
+    expect(fact(db, "attendance.expected")!.value).toBe(240);
+    expect(forecast(db)).toBe(1596000);
+    expect(db.select().from(s.externalActions).all()).toHaveLength(0);
+    const tasks = tasksOf(db, wf.id).filter((t) => t.kind === "proposal" && t.id !== root.taskId);
+    expect(tasks.length).toBeGreaterThan(0);
+    for (const t of tasks) expect(t.status).toBe("blocked");
+  });
+
+  it("approving everything applies consequences that depend on the root change within the same workflow", async () => {
+    const db = freshDb();
+    const wf = await request(db, "Attendance is now 300", "guests");
+    await approveAll(db, wf.id);
+    expect(fact(db, "attendance.expected")!.value).toBe(300);
+    expect(fact(db, "staffing.required")!.value).toBe(5);
+    expect(proposalsOf(db, wf.id).some((p) => p.decision === "stale")).toBe(false);
   });
 });
 

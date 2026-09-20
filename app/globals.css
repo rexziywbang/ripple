@@ -63,6 +63,26 @@ body {
   outline-offset: 2px;
 }
 
+html,
+body {
+  overflow-x: hidden;
+}
+
+.invite-cover {
+  background:
+    radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.35), transparent 45%),
+    radial-gradient(circle at 80% 70%, rgba(255, 214, 165, 0.55), transparent 50%),
+    linear-gradient(135deg, #0f6b5c 0%, #1e8a75 45%, #b4530a 100%);
+}
+
+.chevron {
+  transition: transform 150ms ease;
+}
+[aria-expanded="true"] > .chevron,
+details[open] > summary .chevron {
+  transform: rotate(90deg);
+}
+
 @keyframes ripple-pulse {
   0%,
   100% {

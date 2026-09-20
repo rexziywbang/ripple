@@ -28,6 +28,7 @@ export function ConnectionPill({ c }: { c: Connection }) {
 export function ProjectHeader({ snap, offline, refresh }: { snap: ProjectSnapshot; offline: boolean; refresh: () => Promise<void> }) {
   const router = useRouter();
   const [renaming, setRenaming] = useState(false);
+  const [menu, setMenu] = useState(false);
   const [name, setName] = useState(snap.project.name);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -85,12 +86,12 @@ export function ProjectHeader({ snap, offline, refresh }: { snap: ProjectSnapsho
           ) : (
             <h1 className="truncate text-lg font-semibold">{p.name}</h1>
           )}
-          <span className="text-sm text-muted">
+          <span className="truncate text-sm text-muted" title={`${p.timezone} · revision ${p.revision}`}>
             {p.eventDate}
-            {p.eventTime ? ` · ${p.eventTime}` : ""} · {p.timezone} · rev {p.revision}
+            {p.eventTime ? ` · ${p.eventTime}` : ""}
           </span>
-          <Badge tone={p.status === "closed" ? "neutral" : "accent"}>{p.status}</Badge>
-          {p.isSample && <Badge tone="info">sample data</Badge>}
+          {p.status === "closed" && <Badge tone="neutral">closed</Badge>}
+          {p.isSample && <Badge tone="info">sample</Badge>}
         </div>
         <div className="flex flex-wrap items-center gap-2" aria-label="Integration status">
           {snap.connections.map((c) => (
@@ -100,17 +101,24 @@ export function ProjectHeader({ snap, offline, refresh }: { snap: ProjectSnapsho
             {offline ? "Server unreachable" : snap.worker.online ? `Worker online${snap.worker.queued ? ` · ${snap.worker.queued} queued` : ""}` : `Worker offline${snap.worker.queued ? ` · ${snap.worker.queued} queued` : ""}`}
           </Badge>
         </div>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" onClick={() => setRenaming(true)} disabled={busy}>
-            Rename
+        <div className="relative">
+          <Button variant="ghost" aria-label="Project actions" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((v) => !v)} disabled={busy}>
+            ⋯
           </Button>
-          <Button variant="ghost" onClick={() => patch({ status: p.status === "closed" ? "active" : "closed" })} disabled={busy}>
-            {p.status === "closed" ? "Reopen" : "Close"}
-          </Button>
-          {p.isSample && (
-            <Button variant="ghost" onClick={reset} disabled={busy}>
-              Reset demo
-            </Button>
+          {menu && (
+            <div role="menu" className="absolute right-0 z-20 mt-1 flex w-40 flex-col rounded-lg border border-border bg-surface p-1 shadow-lg" onMouseLeave={() => setMenu(false)}>
+              <button role="menuitem" className="rounded-md px-3 py-1.5 text-left text-sm hover:bg-border/40" onClick={() => { setMenu(false); setRenaming(true); }}>
+                Rename
+              </button>
+              <button role="menuitem" className="rounded-md px-3 py-1.5 text-left text-sm hover:bg-border/40" onClick={() => { setMenu(false); patch({ status: p.status === "closed" ? "active" : "closed" }); }}>
+                {p.status === "closed" ? "Reopen" : "Close"}
+              </button>
+              {p.isSample && (
+                <button role="menuitem" className="rounded-md px-3 py-1.5 text-left text-sm text-danger hover:bg-danger-soft" onClick={() => { setMenu(false); reset(); }}>
+                  Reset demo
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
