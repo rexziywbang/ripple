@@ -1,0 +1,11 @@
+name,email,rsvp,dietary
+Alex Morgan,alex.morgan@northwind.example,accepted,
+Bea Chen,bea.chen@northwind.example,accepted,vegetarian
+Carlos Diaz,carlos.diaz@northwind.example,pending,
+Dana Whitfield,dana.whitfield@northwind.example,accepted,
+Eli Nakamura,eli.nakamura@northwind.example,declined,
+Farah Qureshi,farah.qureshi@northwind.example,accepted,halal
+Grace Okoro,grace.okoro@northwind.example,accepted,vegetarian
+Hugo Lindqvist,hugo.lindqvist@northwind.example,pending,
+Ines Duarte,ines.duarte@northwind.example,accepted,
+Jonah Feld,jonah.feld@northwind.example,accepted,
