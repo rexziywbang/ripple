@@ -1,0 +1,10 @@
+import 'dotenv/config';
+import {createPlanner} from './planner.js';
+import {initialFacts,sources} from './fixtures.js';
+if(!process.env.OPENAI_API_KEY)throw new Error('Set OPENAI_API_KEY in the ignored .env file first.');
+const planner=createPlanner({dbPath:'data/ai.sqlite'});
+const started=Date.now();
+const result=await planner.plan({area:'catering',note:'Cancel our current caterer and ask CAVA for a quote instead. We have 240 guests. Do not announce a confirmed booking until they confirm it.',facts:initialFacts,sources});
+console.log(JSON.stringify({ok:!result.error&&result.patch.caterer==='CAVA',model:result.model,patch:result.patch,summary:result.summary,questions:result.questions,evidenceIds:result.evidenceIds,error:result.error,seconds:(Date.now()-started)/1000,usage:planner.status()},null,2));
+planner.close?.();
+if(result.error||result.patch.caterer!=='CAVA')process.exitCode=1;

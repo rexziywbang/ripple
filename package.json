@@ -1,26 +1,36 @@
 {
-  "name": "ripple",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "next": "16.3.5",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.3.5",
-    "tailwindcss": "^4",
-    "typescript": "^5"
-  }
+ "name": "ripple-event-workspace",
+ "version": "1.0.0",
+ "private": true,
+ "type": "module",
+ "scripts": {
+  "dev": "concurrently -k -n api,web \"npm:dev:api\" \"npm:dev:web\"",
+  "dev:api": "NODE_OPTIONS=--experimental-sqlite tsx watch server/index.ts",
+  "dev:web": "vite --host 127.0.0.1",
+  "build": "tsc --noEmit && vite build",
+  "start": "NODE_OPTIONS=--experimental-sqlite tsx server/index.ts",
+  "test": "NODE_OPTIONS=--experimental-sqlite vitest run",
+  "smoke:ai": "NODE_OPTIONS=--experimental-sqlite tsx server/smoke.ts"
+ },
+ "dependencies": {
+  "@openai/agents": "^0.18.0",
+  "dotenv": "^16.6.1",
+  "express": "^5.1.0",
+  "lucide-react": "^0.468.0",
+  "react": "^19.1.0",
+  "react-dom": "^19.1.0",
+  "zod": "^4.0.0"
+ },
+ "devDependencies": {
+  "@types/express": "^5.0.0",
+  "@types/node": "^22.15.0",
+  "@types/react": "^19.1.0",
+  "@types/react-dom": "^19.1.0",
+  "@vitejs/plugin-react": "^4.5.0",
+  "concurrently": "^9.1.0",
+  "tsx": "^4.20.0",
+  "typescript": "^5.8.0",
+  "vite": "^6.3.5",
+  "vitest": "^3.2.0"
+ }
 }
