@@ -1,0 +1,18 @@
+.operating-plans { margin-top: 24px; color: var(--ink); }
+.operating-plans > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 11px; }
+.operating-plans h3 { margin: 0; font-size: 14px; font-weight: 500; line-height: 1.5; }
+.operating-plans > header > span { color: var(--subtle); font-size: 12px; line-height: 1.5; }
+.op-list { border: 1px solid var(--border); border-radius: 7px; background: var(--paper); overflow: hidden; }
+.op-document + .op-document { border-top: 1px solid var(--border); }
+.op-document > summary { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 12px 14px; color: var(--ink); font-size: 14px; line-height: 1.5; cursor: pointer; list-style: none; }
+.op-document > summary::-webkit-details-marker { display: none; }
+.op-document > summary > span { flex: 1; overflow-wrap: anywhere; }
+.op-document > summary > svg { flex-shrink: 0; color: var(--subtle); }
+.op-document > summary:hover { background: var(--surface); }
+.op-document > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; border-radius: 5px; }
+.op-document > summary > svg:last-child { transition: transform .15s; }
+.op-document[open] > summary > svg:last-child { transform: rotate(180deg); }
+.op-body { padding: 0 14px 14px; }
+.op-reason { margin: 0 0 12px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.op-content { margin: 0; padding-top: 13px; border-top: 1px solid var(--border); color: var(--ink); font-size: 14px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { .op-document > summary > svg:last-child { transition: none; } }

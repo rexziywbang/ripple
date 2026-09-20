@@ -2,7 +2,7 @@ import type {Facts,Source} from '../shared/types.js';
 
 export const initialFacts:Facts = {
   attendance:240,date:'2026-12-11',time:'18:00',timezone:'America/New_York',format:'Seated dinner',
-  venue:'Garden Hall',venueAddress:'125 Garden Avenue, Boston, MA (demo)',venueCapacity:260,venueCostCents:720000,venueIncludesAV:false,
+  venue:'Garden Hall',venueAddress:'125 Garden Avenue, Boston, MA (demo)',venueCapacity:260,venueCostCents:720000,venueIncludesAV:false,venueDetailsPending:false,
   caterer:'Shah Halal',cateringPerPersonCents:2400,cateringDeliveryCents:0,cateringStatus:'confirmed',
   dietary:'Vegetarian and halal options required',staffCount:4,staffCostEachCents:30000,equipmentCostCents:180000,
   budgetLimitCents:1800000,sunkCostCents:0,notes:'Christmas dinner for the Northstar team. Dinner, team awards, and a short presentation.',

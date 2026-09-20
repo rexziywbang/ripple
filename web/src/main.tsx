@@ -21,9 +21,7 @@ import {
   MapPin,
   Plus,
   RefreshCw,
-  Settings2,
   ShieldCheck,
-  Sparkles,
   Undo2,
   Users,
   Utensils,
@@ -34,64 +32,23 @@ import {
   Send,
   ExternalLink,
 } from "lucide-react";
-import type {
-  Area,
-  FactPatch,
-  ProjectState,
-  Proposal,
-  Source,
-} from "../../shared/types";
+import type { Area, FactPatch, ProjectState } from "../../shared/types";
 import "./styles.css";
 import InlinePlan from "./InlinePlan";
+import ReviewQueue, { reviewGroups } from "./ReviewQueue";
+import EventConnections from "./EventConnections";
+import InvitationPreview from "./InvitationPreview";
+import OperatingPlans from "./OperatingPlans";
+import WorkflowProgress from "./WorkflowProgress";
+import { type OnPlanCardAction } from "./PlanCardDeck";
+import CommunicationsHistory, { VendorStatus } from "./CommunicationsHistory";
 import { createMutationQueue } from "./mutation-queue";
+import { buildPlanEdit } from "./plan-edit";
+import { prepareEditedReview, type DraftReview, type LocalEmailDraft } from "./review-drafts";
+import { changeSurface } from "./motion";
+import EventWorkspace, { hasRemainingReviewWork, visibleReviewItems, visibleReviewSlides, type BatchReview } from "./EventWorkspace";
+import WorkspaceHome, { type WorkspaceIndex, type PlanningFile } from "./WorkspaceHome";
 
-const AREA_CONFIG: Record<
-  Area,
-  { label: string; icon: typeof MapPin; color: string; description: string }
-> = {
-  venue: {
-    label: "Venue",
-    icon: MapPin,
-    color: "orange",
-    description: "The right place for everyone.",
-  },
-  guests: {
-    label: "Guests & invitations",
-    icon: Users,
-    color: "blue",
-    description: "Every guest, accounted for.",
-  },
-  catering: {
-    label: "Food & drink",
-    icon: Utensils,
-    color: "pink",
-    description: "Good food. No surprises.",
-  },
-  budget: {
-    label: "Budget",
-    icon: Wallet,
-    color: "green",
-    description: "Keep the numbers in perspective.",
-  },
-  staff: {
-    label: "Staff & schedule",
-    icon: ClipboardList,
-    color: "purple",
-    description: "Everyone knows where to be.",
-  },
-  equipment: {
-    label: "Equipment",
-    icon: Monitor,
-    color: "yellow",
-    description: "The details behind the scenes.",
-  },
-  brief: {
-    label: "Event details",
-    icon: FileText,
-    color: "gray",
-    description: "One plan everyone can follow.",
-  },
-};
 const money = (cents: number, decimals = false) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -99,6 +56,7 @@ const money = (cents: number, decimals = false) =>
     maximumFractionDigits: decimals ? 2 : 0,
   }).format(cents / 100);
 const date = (value: string) => {
+  if (!value) return "Date not set";
   try {
     return new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString(
       "en-US",
@@ -121,8 +79,18 @@ const when = (value: string) => {
 };
 const cname = (...names: (string | false | undefined)[]) =>
   names.filter(Boolean).join(" ");
-type View = "overview" | "messages" | "files" | "activity" | "connections";
+type View = "overview" | "messages" | "activity" | "connections";
 type Toast = { message: string; error?: boolean } | null;
+
+function revealSection(id: string) {
+  // Wait for the saved state and its expanding surface to enter the layout.
+  window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+    document.getElementById(id)?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "start",
+    });
+  }));
+}
 
 async function request(
   path: string,
@@ -146,34 +114,53 @@ async function request(
 }
 
 function App() {
+  const [demoSession] = useState(() => new URLSearchParams(window.location.search).get("demo") === "1");
+  const [showHome, setShowHome] = useState(() => new URLSearchParams(window.location.search).get("demo") === "1");
+  const [workspace, setWorkspace] = useState<WorkspaceIndex | null>(null);
+  const [overviewMode, setOverviewMode] = useState<"edit" | "review" | "complete">("edit");
   const [state, setState] = useState<ProjectState | null>(null);
-  const [view, setView] = useState<View>("overview");
+  const [view, setCurrentView] = useState<View>("overview");
+  const setView = (next: View) => { if (next !== view) changeSurface(() => setCurrentView(next)); };
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [showPresenter, setShowPresenter] = useState(false);
-  const [resetArmed, setResetArmed] = useState(false);
-  const [showProgress, setShowProgress] = useState(false);
-  const [source, setSource] = useState<Source | null>(null);
+  const [emailDrafts, setEmailDrafts] = useState<Record<string, LocalEmailDraft>>({});
+  const [showCreate, setCreateVisible] = useState(false);
+  const setShowCreate = (next: boolean) => changeSurface(() => setCreateVisible(next));
+  const [settledWorkflow, setSettledWorkflow] = useState<string | null>(null);
+  const observedPlanning = useRef<string | null>(null);
   const [projectSwitch, setProjectSwitch] = useState(false);
   const busyRef = useRef(false);
   const mutationQueue = useRef(createMutationQueue());
   const epoch = useRef(0);
   const activeProject = useRef<string | undefined>(undefined);
+  const refreshWorkspace = useCallback(async () => {
+    const response = await fetch("/api/workspace");
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Your workspace couldn’t be opened.");
+    setWorkspace(result as WorkspaceIndex);
+    return result as WorkspaceIndex;
+  }, []);
   const initialLoad = useCallback(async () => {
     try {
-      const result = await request("/api/state", undefined, "GET");
+      if (demoSession) { await refreshWorkspace(); setLoadError(null); return; }
+      let remembered: string | null = null;
+      try { remembered = window.sessionStorage.getItem("ripple.activeProject"); } catch { /* Storage is optional. */ }
+      const result = await request(remembered ? `/api/state?projectId=${encodeURIComponent(remembered)}` : "/api/state", undefined, "GET");
       activeProject.current = result.project.id;
       setState(result);
       setLoadError(null);
     } catch (error) {
       setLoadError((error as Error).message);
     }
-  }, []);
+  }, [demoSession, refreshWorkspace]);
   useEffect(() => {
     void initialLoad();
   }, [initialLoad]);
+  useEffect(() => {
+    if (demoSession || !state?.project.id) return;
+    try { window.sessionStorage.setItem("ripple.activeProject", state.project.id); } catch { /* Keep the open event usable without storage. */ }
+  }, [demoSession, state?.project.id]);
   useEffect(() => {
     const timer = window.setInterval(async () => {
       if (busyRef.current || !activeProject.current) return;
@@ -208,7 +195,6 @@ function App() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setSource(null);
         setShowCreate(false);
         setProjectSwitch(false);
       }
@@ -216,6 +202,24 @@ function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  useEffect(() => {
+    const workflow = state?.workflow;
+    const identity = workflow ? `${state?.project.id}:${workflow.id}` : null;
+    if (workflow?.status === "planning") {
+      observedPlanning.current = identity;
+      setSettledWorkflow(null);
+      return;
+    }
+    if (identity && observedPlanning.current === identity &&
+        (workflow?.status === "review" || workflow?.status === "complete")) {
+      observedPlanning.current = null;
+      setSettledWorkflow(identity);
+      return;
+    }
+    observedPlanning.current = null;
+    setSettledWorkflow(null);
+  }, [state?.project.id, state?.workflow?.id, state?.workflow?.status]);
 
   function enqueue<T>(key: string, operation: () => Promise<T>): Promise<T> {
     // Reserve the queue before yielding so a blur and the following click both survive.
@@ -265,13 +269,33 @@ function App() {
         );
         activeProject.current = id;
         setState(result);
+        setOverviewMode("edit");
+        changeSurface(() => setShowHome(false));
         setView("overview");
-        setSource(null);
       } catch (error) {
         setToast({ message: (error as Error).message, error: true });
       }
     });
   }
+  async function importFolder(files: PlanningFile[]) {
+    return enqueue("import", async () => {
+      const result = await request("/api/workspace/import", { files, ...(demoSession ? { demo: true } : {}) });
+      activeProject.current = result.project.id;
+      setState(result);
+      setOverviewMode("edit");
+      setCurrentView("overview");
+      setLoadError(null);
+      changeSurface(() => setShowHome(false));
+    });
+  }
+  function openHome() {
+    changeSurface(() => setShowHome(true));
+    void refreshWorkspace().catch(error => setLoadError((error as Error).message));
+  }
+  if (showHome) return <>
+    <WorkspaceHome workspace={workspace} demo={demoSession} busy={!!busy} error={loadError} onImport={importFolder} onOpen={switchProject} onNew={() => setShowCreate(true)} onRefresh={refreshWorkspace} />
+    {showCreate && <CreateProject busy={!!busy} onClose={() => setShowCreate(false)} onCreate={async name => { const result = await enqueue("create", () => request("/api/projects", { name })); activeProject.current = result.project.id; setState(result); setOverviewMode("edit"); setShowCreate(false); changeSurface(() => setShowHome(false)); }} />}
+  </>;
   if (!state)
     return (
       <div className="boot">
@@ -294,28 +318,86 @@ function App() {
       </div>
     );
   const f = state.project.facts;
-  const priority = { warning: 0, email: 1, invitation: 2, fact: 3, file: 4 };
-  const pending = state.proposals
-    .filter((p) => p.status === "pending" || p.status === "blocked")
-    .sort((a, b) => priority[a.kind] - priority[b.kind]);
+  const decisionCount = demoSession ? visibleReviewItems(state).length : visibleReviewSlides(state).length;
+  const communicationDecisions = reviewGroups(state.proposals, true);
   const active = state.workflow?.status === "planning";
+  const workflowIdentity = state.workflow ? `${state.project.id}:${state.workflow.id}` : null;
+  const finishingNow = !!state.workflow && observedPlanning.current === workflowIdentity && ["review", "complete"].includes(state.workflow.status);
+  const justSettled = !!state.workflow && (settledWorkflow === workflowIdentity || finishingNow);
   const waiting = state.workflow?.status === "waiting";
-  const latestUndo = state.activity.find((a) => a.canUndo && a.changeId);
+  const pendingEmailCount = Math.max(0, state.emailDelivery?.pendingCount ?? 0);
+  const latestUndo = state.activity.find((a) => a.canUndo && a.changeId && !a.automatic);
   const decisionBusy = busy !== null && busy !== "save";
   const budgetLeft = f.budgetLimitCents - state.budget.totalCents;
-  const budgetIncomplete = state.budget.lines.some(
-    (line) => line.status === "awaiting quote",
-  );
   const url = `/api/projects/${encodeURIComponent(state.project.id)}`;
-  const approve = (proposal: Proposal, decision: "approve" | "deny") =>
-    mutate(
-      `${url}/proposals/${proposal.id}/${decision}`,
-      {},
-      `${decision}-${proposal.id}`,
-      decision === "approve"
-        ? "Approved. The plan is being updated."
-        : "Suggestion denied.",
-    );
+  const planCardAction: OnPlanCardAction = (proposalId, cardId, action, revisionToken, instruction) => {
+    const projectId = state.project.id;
+    return enqueue(`card-${action}`, async () => {
+      if (activeProject.current !== projectId) throw new Error("The selected event changed. Open its latest plan before continuing.");
+      const result = await request(`${url}/proposals/${encodeURIComponent(proposalId)}/cards/${encodeURIComponent(cardId)}/${action}`, { revisionToken, ...(action === "rewrite" ? { instruction } : {}) });
+      if (activeProject.current === projectId) {
+        setState(result);
+        if (action !== "rewrite" && view === "overview" && overviewMode === "review" && !hasRemainingReviewWork(result)) changeSurface(() => { setOverviewMode("complete"); revealSection("event-review"); });
+      }
+      return result;
+    });
+  };
+  const decideBundle = (
+    proposalIds: string[],
+    decision: "approve" | "deny",
+    approvalTokens: Record<string, string>,
+    review?: DraftReview,
+  ) => {
+    const projectId = state.project.id;
+    return enqueue(`bundle-${decision}`, async () => {
+      if (activeProject.current !== projectId) throw new Error("The selected event changed. Review its latest decisions before approving.");
+      let prepared = { proposalIds, approvalTokens };
+      if (decision === "approve" && review) {
+        prepared = await prepareEditedReview(projectId, review, {
+          readState: () => request(`/api/state?projectId=${encodeURIComponent(projectId)}`, undefined, "GET"),
+          saveDraft: async (proposalId, input) => {
+            const next = await request(`${url}/proposals/${encodeURIComponent(proposalId)}/draft`, input, "PATCH");
+            if (activeProject.current === projectId) setState(next);
+            return next;
+          },
+        });
+      }
+      const result = await request(`${url}/decisions`, { ...prepared, decision });
+      if (activeProject.current === projectId) {
+        setState(result);
+        if (view === "overview" && overviewMode === "review" && !hasRemainingReviewWork(result)) changeSurface(() => { setOverviewMode("complete"); revealSection("event-review"); });
+      }
+      return true;
+    });
+  };
+  const acceptAll = (review: BatchReview) => {
+    const projectId = state.project.id;
+    return enqueue("accept-all", async () => {
+      if (activeProject.current !== projectId) throw new Error("The selected event changed. Review its latest suggestions before accepting them.");
+      let preparedState: ProjectState | undefined;
+      const prepared = await prepareEditedReview(projectId, review, {
+        readState: async () => {
+          const latest = await request(`/api/state?projectId=${encodeURIComponent(projectId)}`, undefined, "GET");
+          if (latest.project.revision !== review.revision) throw new Error("The event changed. Review the latest suggestions before accepting them.");
+          preparedState = latest;
+          return latest;
+        },
+        saveDraft: async (proposalId, input) => {
+          const next = await request(`${url}/proposals/${encodeURIComponent(proposalId)}/draft`, input, "PATCH");
+          preparedState = next;
+          if (activeProject.current === projectId) setState(next);
+          return next;
+        },
+      });
+      if (!preparedState || activeProject.current !== projectId) throw new Error("Open the event’s latest suggestions before accepting them.");
+      const result = await request(`${url}/accept-all`, { ...prepared, revision: preparedState.project.revision, planCardTokens: review.planCardTokens });
+      if (activeProject.current === projectId) {
+        setState(result);
+        if (!hasRemainingReviewWork(result)) changeSurface(() => { setOverviewMode("complete"); revealSection("event-review"); });
+      }
+      return true;
+    });
+  };
   const undo = (id: string) =>
     mutate(
       `${url}/undo/${id}`,
@@ -323,6 +405,19 @@ function App() {
       `undo-${id}`,
       "The earlier plan has been restored.",
     );
+  const openIndividualDetails = (area: Area) => {
+    const sectionNames: Record<Area, string> = { guests: "Guests", venue: "Venue", catering: "Catering", budget: "Budget", staff: "Staff", equipment: "Equipment", brief: "When" };
+    setOverviewMode("edit");
+    window.requestAnimationFrame(() => {
+      const details = document.getElementById("individual-event-details") as HTMLDetailsElement | null;
+      if (!details) return;
+      details.open = true;
+      const section = details.querySelector<HTMLElement>(`section[aria-label="${sectionNames[area]}"]`);
+      if (!section) return;
+      section.querySelectorAll("details").forEach(nested => { nested.open = true; });
+      section.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+    });
+  };
 
   return (
     <div className="app-shell">
@@ -332,7 +427,7 @@ function App() {
           className="brand"
           onClick={(e) => {
             e.preventDefault();
-            setView("overview");
+            openHome();
           }}
           aria-label="Ripple home"
         >
@@ -364,26 +459,32 @@ function App() {
         <div className="nav-label">WORKSPACE</div>
         <nav className="main-nav">
           <button
+            aria-label="Event plan"
+            title="Event plan"
             className={cname(view === "overview" && "selected")}
             onClick={() => setView("overview")}
           >
             <LayoutGrid size={18} />
             <span>Event plan</span>
-            {pending.length > 0 && <b>{pending.length}</b>}
+            {decisionCount > 0 && <b>{decisionCount}</b>}
           </button>
           <button
+            aria-label="Communications"
+            title="Communications"
             className={cname(view === "messages" && "selected")}
             onClick={() => setView("messages")}
           >
             <Mail size={18} />
-            <span>Communications</span>
+            <span>Messages</span>
           </button>
           <button
+            aria-label="Activity"
+            title="Activity"
             className={cname(view === "activity" && "selected")}
             onClick={() => setView("activity")}
           >
             <History size={18} />
-            <span>Activity</span>
+            <span>History</span>
           </button>
         </nav>
         <div className="nav-label events-label">
@@ -393,7 +494,7 @@ function App() {
           </button>
         </div>
         <nav className="events-nav">
-          {state.projects.map((p) => (
+          {state.projects.filter(p => !demoSession || p.id === state.project.id).map((p) => (
             <button
               key={p.id}
               className={cname(p.id === state.project.id && "current-event")}
@@ -406,31 +507,20 @@ function App() {
         </nav>
         <div className="sidebar-bottom">
           <button
+            aria-label="Event settings"
+            title="Event settings"
             className="presenter-toggle"
             onClick={() => setView("connections")}
           >
             <Link2 size={16} />
-            <span>Integrations & sources</span>
-          </button>
-          <button
-            className="presenter-toggle"
-            onClick={() => setShowPresenter(!showPresenter)}
-          >
-            <Settings2 size={16} />
-            <span>Demo controls</span>
-            <ChevronRight
-              size={14}
-              className={showPresenter ? "rotate-90" : ""}
-            />
+            <span>Connections</span>
           </button>
         </div>
       </aside>
       <main className="main">
         <header className="topbar">
           <div className="breadcrumb">
-            <span>Events</span>
-            <ChevronRight size={13} />
-            <strong>{state.project.name}</strong>
+            <span>{view === "overview" ? "Event plan" : view === "messages" ? "Messages" : view === "activity" ? "History" : "Connections"}</span>
           </div>
           <div className="topbar-right">
             <button
@@ -441,13 +531,9 @@ function App() {
             >
               <Folder size={17} />
             </button>
-            <span className="demo-badge">
-              <span />
-              Demo workspace
-            </span>
             <button
               className="icon-button"
-              aria-label="View connections"
+              aria-label="View event settings"
               onClick={() => setView("connections")}
             >
               <Link2 size={17} />
@@ -462,31 +548,19 @@ function App() {
                   ? state.project.name
                   : view === "messages"
                     ? "Communications"
-                    : view === "files"
-                      ? "Planning files"
-                      : view === "activity"
+                    : view === "activity"
                         ? "Event activity"
-                        : "Integrations & sources"}
+                        : "Event settings"}
               </h1>
-              <p>
-                {view === "overview" ? (
+              {view === "overview" && <p>
                   <>
                     <CalendarDays size={14} />
                     {date(f.date)}
                     <span className="separator">·</span>
                     <MapPin size={14} />
-                    {f.venue}
+                    {f.venue || "Venue not set"}
                   </>
-                ) : view === "messages" ? (
-                  "Vendor requests, staff updates, and guest invitations."
-                ) : view === "files" ? (
-                  "Source documents used to check your event details."
-                ) : view === "activity" ? (
-                  "A clear record of what changed, and what happened next."
-                ) : (
-                  "Data sources and delivery status for this event."
-                )}
-              </p>
+              </p>}
             </div>
             <div className="heading-actions">
               {latestUndo && (
@@ -494,447 +568,69 @@ function App() {
                   className="secondary compact quick-undo"
                   disabled={decisionBusy}
                   title={latestUndo.title}
+                  aria-label="Undo last change"
                   onClick={() => undo(latestUndo.changeId!)}
                 >
                   <Undo2 size={15} />
-                  Undo last change
+                  Undo
                 </button>
               )}
             </div>
           </div>
-          {showPresenter && (
-            <section className="presenter-panel">
-              <div>
-                <span className="section-eyebrow">PRESENTER TOOLS</span>
-                <p>
-                  Simulate a vendor reply. These messages stay inside this demo.
-                </p>
-              </div>
-              <div className="presenter-buttons">
-                {(
-                  [
-                    "quote",
-                    "confirmation",
-                    "cancellation",
-                    "stale_quote",
-                  ] as const
-                ).map((type) => (
-                  <button
-                    className="secondary compact"
-                    disabled={!!busy}
-                    key={type}
-                    onClick={() =>
-                      mutate(
-                        `${url}/demo`,
-                        { type },
-                        `demo-${type}`,
-                        "Demo reply received. Related details are being checked.",
-                      )
-                    }
-                  >
-                    <Mail size={13} />
-                    {type === "quote"
-                      ? "New quote"
-                      : type === "confirmation"
-                        ? "Booking confirmed"
-                        : type === "cancellation"
-                          ? "Cancellation confirmed"
-                          : "Old quote"}
-                  </button>
-                ))}
-                <button
-                  className="text-button reset-button"
-                  disabled={!!busy}
-                  onClick={async () => {
-                    if (!resetArmed) {
-                      setResetArmed(true);
-                      return;
-                    }
-                    const ok = await mutate(
-                      `${url}/reset`,
-                      {},
-                      "reset",
-                      "Demo event reset.",
-                    );
-                    if (ok) setResetArmed(false);
-                  }}
-                >
-                  <RefreshCw size={13} />
-                  {resetArmed ? "Confirm reset" : "Reset demo"}
-                </button>
-                {resetArmed && (
-                  <>
-                    <button
-                      className="text-button reset-button"
-                      onClick={() => setResetArmed(false)}
-                    >
-                      Cancel
-                    </button>
-                    <span className="reset-explanation">
-                      Resets this demo event’s changes and activity.
-                    </span>
-                  </>
-                )}
-              </div>
-              <button
-                aria-label="Close demo controls"
-                className="icon-button"
-                onClick={() => setShowPresenter(false)}
-              >
-                <X size={15} />
-              </button>
-            </section>
-          )}
           {view === "overview" && (
             <>
               <section className="plan-summary" aria-label="Event at a glance">
                 <span>
                   <Users size={16} />
-                  <strong>{f.attendance} guests</strong>
-                  <small
-                    className={
-                      f.attendance > f.venueCapacity ? "over-text" : ""
-                    }
-                  >
-                    {f.attendance > f.venueCapacity
-                      ? `${f.attendance - f.venueCapacity} over capacity`
-                      : `${Math.max(0, f.venueCapacity - f.attendance)} places to spare`}
-                  </small>
+                  <strong>{f.attendance > 0 ? `${f.attendance} guests` : "Guest count not set"}</strong>
                 </span>
                 <span>
                   <Wallet size={16} />
-                  <strong>{money(state.budget.totalCents)}</strong>
-                  <small className={budgetLeft < 0 ? "over-text" : ""}>
-                    {budgetIncomplete
-                      ? "Awaiting quote · estimate incomplete"
-                      : `${money(Math.abs(budgetLeft))} ${budgetLeft < 0 ? "over budget" : "remaining"}`}
-                  </small>
+                  <strong>{state.budget.totalCents > 0 ? `${money(state.budget.totalCents)} estimated` : "Costs to confirm"}</strong>
+                  {f.budgetLimitCents > 0 && budgetLeft < 0 && <small className="over-text">{money(Math.abs(budgetLeft))} over budget</small>}
                 </span>
+                {decisionCount > 0 && <a className="review-jump" href="#event-review" onClick={event => { event.preventDefault(); setOverviewMode("review"); revealSection("event-review"); }}>{decisionCount} to review<ArrowRight size={13} /></a>}
               </section>
-              {state.workflow && (
-                <section
-                  className={cname(
-                    "ambient-strip",
-                    active && "is-working",
-                    state.workflow.status === "failed" && "has-error",
-                  )}
-                  aria-live="polite"
-                >
-                  <button
-                    className="ambient-main"
-                    onClick={() => setShowProgress(!showProgress)}
-                    aria-expanded={showProgress}
-                  >
-                    <span className="ambient-symbol">
-                      {active ? (
-                        <LoaderCircle className="spin" size={17} />
-                      ) : waiting ? (
-                        <Clock3 size={17} />
-                      ) : state.workflow.status === "failed" ? (
-                        <CircleHelp size={17} />
-                      ) : (
-                        <CheckCheck size={17} />
-                      )}
-                    </span>
-                    <span>
-                      <strong>
-                        {active
-                          ? "Checking the details around your change"
-                          : waiting
-                            ? "Waiting for vendor reply"
-                            : state.workflow.status === "failed"
-                              ? "This change needs another look"
-                              : state.workflow.summary ||
-                                "Related details checked"}
-                      </strong>
-                      {active && (
-                        <small>
-                          Related drafts will appear here when ready.
-                        </small>
-                      )}
-                    </span>
-                    <ChevronDown
-                      size={15}
-                      className={showProgress ? "rotate-180" : ""}
-                    />
-                  </button>
-                  {showProgress && (
-                    <div className="progress-content">
-                      <div className="progress-track">
-                        {state.workflow.stages.map((stage, i) => (
-                          <div
-                            key={`${stage.label}-${i}`}
-                            className={cname("progress-stage", stage.status)}
-                          >
-                            <div className="stage-node">
-                              {stage.status === "done" ? (
-                                <Check size={12} />
-                              ) : stage.status === "running" ? (
-                                <span className="stage-pulse" />
-                              ) : (
-                                i + 1
-                              )}
-                            </div>
-                            <span>{stage.label}</span>
-                          </div>
-                        ))}
-                      </div>
-                      {state.workflow.error && (
-                        <p className="error-copy">{state.workflow.error}</p>
-                      )}
-                    </div>
-                  )}
-                </section>
-              )}
-              <div className="workspace-grid">
-                <section className="plan-section">
-                  <div className="section-heading">
-                    <div>
-                      <h2>Event plan</h2>
-                      <p>Edit the details below. Changes save automatically.</p>
-                    </div>
-                  </div>
-                  <InlinePlan
-                    key={state.project.id}
-                    state={state}
-                    onSave={(area: Area, patch: FactPatch) =>
-                      mutate(url, { area, patch }, "save", undefined, "PATCH")
-                    }
-                  />
-                </section>
-                <section className="updates-section">
-                  <div className="section-heading">
-                    <div>
-                      <h2>
-                        To send & update{" "}
-                        {pending.length > 0 && (
-                          <span className="count-bubble">{pending.length}</span>
-                        )}
-                      </h2>
-                      <p>
-                        {active
-                          ? "Checking the details around your change."
-                          : pending.length
-                            ? "Review the changes, then approve or deny."
-                            : "Emails and plan changes that need your approval."}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="proposal-list">
-                    {pending.map((p) => (
-                      <ProposalCard
-                        key={p.id}
-                        proposal={p}
-                        proposals={state.proposals}
-                        sources={state.sources}
-                        busy={busy}
-                        onDecision={approve}
-                      />
-                    ))}
-                    {pending.length === 0 && (
-                      <div className="empty-updates">
-                        <div className="empty-orbits">
-                          <div />
-                          <div />
-                          <div />
-                          <span>
-                            {active ? (
-                              <LoaderCircle size={23} className="spin" />
-                            ) : (
-                              <Check size={25} />
-                            )}
-                          </span>
-                        </div>
-                        <h3>
-                          {active
-                            ? "Checking the related details"
-                            : "No pending actions"}
-                        </h3>
-                        <p>
-                          {active
-                            ? "Keep editing. We’ll bring you the decisions."
-                            : "Changes to your event prepare vendor emails, staff updates, and guest notices here."}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                  {state.activity.length > 0 && (
-                    <div className="recent-activity">
-                      <div className="recent-heading">
-                        <h3>Recent changes</h3>
-                        <button onClick={() => setView("activity")}>
-                          History
-                          <ArrowRight size={13} />
-                        </button>
-                      </div>
-                      {state.activity.slice(0, 3).map((a) => (
-                        <div className="recent-row" key={a.id}>
-                          <span className={cname("activity-dot", a.status)} />
-                          <div>
-                            <strong>{a.title}</strong>
-                            <small>{when(a.at)}</small>
-                          </div>
-                          {a.canUndo && a.changeId && (
-                            <button
-                              className="undo-button"
-                              disabled={decisionBusy}
-                              onClick={() => undo(a.changeId!)}
-                            >
-                              <Undo2 size={13} />
-                              Undo
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </section>
+              <div id="event-progress" style={{ scrollMarginTop: 24 }} className={cname("progress-presence", !!state.workflow && (active || justSettled || (waiting && pendingEmailCount === 0) || state.workflow.status === "failed") && "is-visible")}
+                aria-hidden={!(state.workflow && (active || justSettled || (waiting && pendingEmailCount === 0) || state.workflow.status === "failed"))}>
+                <div>{state.workflow && <WorkflowProgress workflow={state.workflow} impact={state.impact} settled={justSettled} hasDecisions={decisionCount > 0} onVisualComplete={workflowId => { if (state.workflow?.id === workflowId) setSettledWorkflow(null); }} />}</div>
+              </div>
+              <div className={cname("ew-content-presence", (active || justSettled) && "is-hidden")} aria-hidden={active || justSettled} inert={active || justSettled}>
+                <div id="event-review" style={{ scrollMarginTop: 24 }}>
+                  <EventWorkspace key={state.project.id} state={state} busy={!!busy} mode={overviewMode}
+                    onSave={async (area, note, patch) => { const ok = await mutate(url, { area, ...(note.trim() ? { note } : {}), ...(patch ? { patch } : {}) }, "save", undefined, "PATCH"); if (ok) { setOverviewMode("review"); revealSection("event-progress"); } return ok; }}
+                    onDecide={decideBundle} onPlanCardAction={planCardAction} onAcceptAll={acceptAll} reviewOverview={demoSession} emailDrafts={emailDrafts} setEmailDrafts={setEmailDrafts} onDetails={openIndividualDetails} onEdit={() => changeSurface(() => setOverviewMode("edit"))} />
+                  {overviewMode === "edit" && decisionCount > 0 && <div className="ew-review-access"><button className="secondary" disabled={!!busy} onClick={() => changeSurface(() => { setOverviewMode("review"); revealSection("event-review"); })}>Review changes<ArrowRight size={15} /></button></div>}
+                  {overviewMode === "edit" && <details className="ew-all-details" id="individual-event-details"><summary>All event details<ChevronDown size={13} /></summary><div><InlinePlan key={state.project.id} state={state} onSave={async (area: Area, patch: FactPatch) => { const ok = await mutate(url, buildPlanEdit(area, patch), "save", undefined, "PATCH"); if (ok) { setOverviewMode("review"); revealSection("event-progress"); } return ok; }} /><OperatingPlans key={`operating-plans:${state.project.id}`} state={state} /></div></details>}
+                </div>
               </div>
             </>
           )}
           {view === "messages" && (
             <div className="communications-layout">
               <section>
+                <VendorStatus state={state} />
                 <div className="section-heading">
-                  <h2>Ready for approval</h2>
+                  <h2>To send</h2>
                   <span className="subtle-count">
-                    {
-                      pending.filter(
-                        (p) => p.kind === "email" || p.kind === "invitation",
-                      ).length
-                    }
+                    {communicationDecisions.length} {communicationDecisions.length === 1 ? "decision" : "decisions"}
                   </span>
                 </div>
-                <div className="proposal-list">
-                  {pending
-                    .filter(
-                      (p) => p.kind === "email" || p.kind === "invitation",
-                    )
-                    .map((p) => (
-                      <ProposalCard
-                        key={p.id}
-                        proposal={p}
-                        proposals={state.proposals}
-                        sources={state.sources}
-                        busy={busy}
-                        onDecision={approve}
-                      />
-                    ))}
-                  {!pending.some(
-                    (p) => p.kind === "email" || p.kind === "invitation",
-                  ) && (
-                    <div className="communication-empty">
-                      {active ? (
-                        <LoaderCircle size={23} className="spin" />
-                      ) : (
-                        <Mail size={23} />
-                      )}
-                      <h3>
-                        {active ? "Preparing messages" : "No drafts to review"}
-                      </h3>
-                      <p>
-                        {active
-                          ? "Checking the current event details before preparing the drafts."
-                          : "Vendor requests, team emails, and guest notices are prepared when the event changes."}
-                      </p>
-                    </div>
-                  )}
-                </div>
+                <ReviewQueue
+                  key={state.project.id}
+                  state={state}
+                  busy={busy}
+                  onDecide={decideBundle}
+                  emailDrafts={emailDrafts}
+                  setEmailDrafts={setEmailDrafts}
+                  communicationsOnly
+                />
               </section>
-              <section className="surface">
-                <div className="surface-header">
-                  <h2>Conversation history</h2>
-                  <span className="subtle-count">{state.messages.length}</span>
-                </div>
-                {f.cateringStatus !== "confirmed" && (
-                  <div className="vendor-wait">
-                    <Clock3 size={16} />
-                    <div>
-                      <strong>{f.caterer}</strong>
-                      <p>
-                        {f.cateringStatus === "awaiting_quote"
-                          ? "Quote not received. Review and approve any unsent request; the budget updates when the reply arrives."
-                          : f.cateringStatus === "awaiting_confirmation"
-                            ? "Waiting for booking confirmation before notifying guests and staff."
-                            : "Quote received. Review the booking request."}
-                      </p>
-                    </div>
-                  </div>
-                )}
-                <div className="messages-list">
-                  {state.messages.map((m) => (
-                    <article key={m.id} className="conversation-message">
-                      <div>
-                        <span
-                          className={cname("message-direction", m.direction)}
-                        >
-                          {m.direction === "inbound"
-                            ? "Received"
-                            : "Sent · simulated"}
-                        </span>
-                        <small>{when(m.at)}</small>
-                      </div>
-                      <h3>{m.subject}</h3>
-                      <span className="message-address">{m.from}</span>
-                      <p>{m.body}</p>
-                    </article>
-                  ))}
-                  {!state.messages.length && (
-                    <p className="panel-empty">
-                      Sent messages and vendor replies will appear here.
-                    </p>
-                  )}
-                </div>
-              </section>
+              <div className="communications-side">
+                <InvitationPreview state={state} />
+                <CommunicationsHistory state={state} />
+              </div>
             </div>
-          )}
-          {view === "files" && (
-            <>
-              <div className="files-banner">
-                <span className="connection-logo dropbox-logo">
-                  <DropboxLogo />
-                </span>
-                <div>
-                  <h2>{state.project.name}</h2>
-                  <p>
-                    Planning folder · {state.sources.length} source files · Demo
-                    Dropbox
-                  </p>
-                </div>
-                <span className="subtle-badge">Local demo files</span>
-              </div>
-              <div className="source-grid">
-                {state.sources.map((s) => (
-                  <button
-                    className="source-card"
-                    key={s.id}
-                    onClick={() => setSource(s)}
-                  >
-                    <span
-                      className={cname("area-icon", AREA_CONFIG[s.area].color)}
-                    >
-                      <FileText size={22} />
-                    </span>
-                    <h3>{s.title}</h3>
-                    <p>
-                      {s.content.slice(0, 140)}
-                      {s.content.length > 140 && "…"}
-                    </p>
-                    <div>
-                      <span>{AREA_CONFIG[s.area].label}</span>
-                      <ArrowUpRight size={15} />
-                    </div>
-                  </button>
-                ))}
-              </div>
-              {state.sources.length === 0 && (
-                <div className="generic-empty">
-                  <Folder size={35} />
-                  <h3>No planning files yet</h3>
-                  <p>Your event’s source documents will appear here.</p>
-                </div>
-              )}
-            </>
           )}
           {view === "activity" && (
             <div className="activity-layout">
@@ -991,6 +687,10 @@ function App() {
                 )}
               </section>
               <div className="activity-side">
+                {state.workflow?.error && <details className="workflow-diagnostics">
+                  <summary>Technical details</summary>
+                  <p>{state.workflow.error}</p>
+                </details>}
                 <section className="surface">
                   <div className="surface-header">
                     <h2>Action receipts</h2>
@@ -1008,17 +708,20 @@ function App() {
                             ) : (
                               <Check size={12} />
                             )}
-                            {r.status === "simulated"
-                              ? "Simulated"
-                              : r.status === "local"
-                                ? "Saved locally"
-                                : "Failed"}
+                            {r.status === "delivered"
+                              ? "Delivered"
+                              : r.status === "simulated"
+                                ? "Recorded"
+                                : r.status === "local"
+                                  ? "Saved locally"
+                                  : "Failed"}
                           </span>
                           <small>{when(r.at)}</small>
                         </div>
                         <h3>{r.title}</h3>
                         <p>{r.detail}</p>
                         <span className="receipt-provider">{r.provider}</span>
+                        {r.url && /^https:\/\//.test(r.url) && <a className="text-button" href={r.url} target="_blank" rel="noreferrer">View delivery<ExternalLink size={12} /></a>}
                       </div>
                     ))}
                     {!state.receipts.length && (
@@ -1051,9 +754,8 @@ function App() {
                           <ChevronDown size={13} />
                         </summary>
                         <p>{m.body}</p>
-                        {m.simulated && (
-                          <span className="subtle-badge">Demo message</span>
-                        )}
+                        <span className="subtle-badge">{m.simulated ? "Recorded" : m.direction === "outbound" ? "Sent" : "Received"}</span>
+                        {m.url && /^https:\/\//.test(m.url) && <a className="text-button" href={m.url} target="_blank" rel="noreferrer">Open in Gmail<ExternalLink size={12} /></a>}
                       </details>
                     ))}
                     {!state.messages.length && (
@@ -1068,137 +770,11 @@ function App() {
           )}
           {view === "connections" && (
             <>
-              <div className="connection-intro">
-                <ShieldCheck size={20} />
-                <p>
-                  This workspace uses demo files, emails, and invitations.
-                  External messages are simulated and clearly recorded in
-                  Activity.
-                </p>
-                <button
-                  className="secondary compact"
-                  onClick={() => setView("files")}
-                >
-                  <FileText size={15} />
-                  Source documents
-                </button>
-              </div>
-              <div className="connections-grid">
-                {state.connections.map((c) => (
-                  <div key={c.name} className="connection-card">
-                    <span
-                      className={cname(
-                        "connection-logo",
-                        c.name.toLowerCase().includes("dropbox")
-                          ? "dropbox-logo"
-                          : c.name.toLowerCase().includes("email")
-                            ? "mail-logo"
-                            : "invite-logo",
-                      )}
-                    >
-                      {c.name.toLowerCase().includes("dropbox") ? (
-                        <DropboxLogo />
-                      ) : c.name.toLowerCase().includes("email") ? (
-                        <Mail size={24} />
-                      ) : (
-                        <CalendarDays size={24} />
-                      )}
-                    </span>
-                    <span className={cname("connection-mode", c.mode)}>
-                      {c.mode === "live"
-                        ? "Connected"
-                        : c.mode === "demo"
-                          ? "Demo"
-                          : "Unavailable"}
-                    </span>
-                    <h2>{c.name}</h2>
-                    <p>{c.detail}</p>
-                  </div>
-                ))}
-              </div>
-              <section className="ai-details surface">
-                <div>
-                  <span className="area-icon green">
-                    <Sparkles size={19} />
-                  </span>
-                  <div>
-                    <h2>Planning intelligence</h2>
-                    <p>
-                      {state.ai.mode === "live"
-                        ? "OpenAI is connected. Changes are checked using your event’s facts and documents."
-                        : "Demo planning is active. Event rules and sample documents power this workspace."}
-                    </p>
-                  </div>
-                  <span className={cname("connection-mode", state.ai.mode)}>
-                    {state.ai.mode === "live" ? "Live" : "Demo"}
-                  </span>
-                </div>
-                <dl>
-                  <div>
-                    <dt>Model</dt>
-                    <dd>{state.ai.model || "Demo planner"}</dd>
-                  </div>
-                  <div>
-                    <dt>Fallback</dt>
-                    <dd>{state.ai.fallbackModel || "—"}</dd>
-                  </div>
-                  <div>
-                    <dt>Estimated usage</dt>
-                    <dd>
-                      ${state.ai.estimatedSpendUsd.toFixed(4)} / $
-                      {state.ai.spendLimitUsd.toFixed(2)}
-                    </dd>
-                  </div>
-                </dl>
-                {state.ai.lastError && (
-                  <p className="error-copy">{state.ai.lastError}</p>
-                )}
-              </section>
+              <EventConnections key={state.project.id} projectId={state.project.id} />
             </>
           )}
-          <footer className="page-footer">
-            Local demo · Emails and invitations are simulated
-          </footer>
         </div>
       </main>
-      {source && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setSource(null);
-          }}
-        >
-          <section
-            className="document-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="source-title"
-          >
-            <div className="drawer-top">
-              <span
-                className={cname("area-icon", AREA_CONFIG[source.area].color)}
-              >
-                <FileText size={20} />
-              </span>
-              <button
-                className="icon-button"
-                onClick={() => setSource(null)}
-                aria-label="Close file"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <span className="section-eyebrow">PLANNING FILE</span>
-            <h2 id="source-title">{source.title}</h2>
-            <p className="document-path">{source.path}</p>
-            <pre>{source.content}</pre>
-            <div className="document-footer">
-              <ShieldCheck size={14} />
-              Included as a source when checking related changes.
-            </div>
-          </section>
-        </div>
-      )}
       {showCreate && (
         <CreateProject
           busy={!!busy}
@@ -1245,178 +821,6 @@ function RippleMark() {
     </span>
   );
 }
-function DropboxLogo() {
-  return (
-    <svg
-      viewBox="0 0 40 40"
-      width="26"
-      height="26"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <path
-        d="m10 6 10 6-10 6L0 12Zm20 0 10 6-10 6-10-6ZM10 19l10 6-10 6L0 25Zm20 0 10 6-10 6-10-6ZM10 33l10-6 10 6-10 6Z"
-        transform="translate(3 0) scale(.85)"
-      />
-    </svg>
-  );
-}
-function ProposalCard({
-  proposal: p,
-  proposals,
-  sources,
-  busy,
-  onDecision,
-}: {
-  proposal: Proposal;
-  proposals: Proposal[];
-  sources: Source[];
-  busy: string | null;
-  onDecision: (p: Proposal, decision: "approve" | "deny") => Promise<boolean>;
-}) {
-  const Icon =
-    p.kind === "email"
-      ? Mail
-      : p.kind === "invitation"
-        ? Send
-        : p.kind === "warning"
-          ? CircleHelp
-          : AREA_CONFIG[p.area].icon;
-  const prerequisites = p.dependencies
-    .map((id) => proposals.find((item) => item.id === id))
-    .filter((item): item is Proposal => !!item && item.status !== "applied");
-  const held = prerequisites.length > 0 || p.status === "blocked";
-  const deciding = busy !== null && busy !== "save";
-  return (
-    <article className={cname("proposal-card", held && "blocked-proposal")}>
-      <div className="proposal-top">
-        <span
-          className={cname(
-            "proposal-kind",
-            p.kind === "warning" ? "warning-kind" : "",
-          )}
-        >
-          <Icon size={13} />
-          {p.kind === "email"
-            ? "EMAIL DRAFT"
-            : p.kind === "invitation"
-              ? "INVITATION UPDATE"
-              : p.kind === "warning"
-                ? "NEEDS ATTENTION"
-                : AREA_CONFIG[p.area].label.toUpperCase()}
-        </span>
-        {p.costImpactCents !== null && p.costImpactCents !== 0 && (
-          <span
-            className={cname("cost-impact", p.costImpactCents < 0 && "saving")}
-          >
-            {p.costImpactCents > 0 ? "+" : "−"}
-            {money(Math.abs(p.costImpactCents))}
-          </span>
-        )}
-      </div>
-      <h3>{p.title}</h3>
-      {![
-        "Prepared for your approval. Delivery is simulated in this demo.",
-        "Preview the exact invitation update before approving.",
-      ].includes(p.description) && (
-        <p className="proposal-description">{p.description}</p>
-      )}
-      {p.kind !== "email" && p.kind !== "warning" && (
-        <div className="change-preview">
-          <span>{p.before || "Current plan"}</span>
-          <ArrowRight size={13} />
-          <strong>{p.after || "Updated plan"}</strong>
-        </div>
-      )}
-      {(p.body || p.subject) && (
-        <div className="email-preview visible-draft">
-          <dl>
-            {p.recipient && (
-              <div>
-                <dt>To</dt>
-                <dd>{p.recipient}</dd>
-              </div>
-            )}
-            {p.subject && (
-              <div>
-                <dt>Subject</dt>
-                <dd>{p.subject}</dd>
-              </div>
-            )}
-          </dl>
-          <p>{p.body}</p>
-          <span className="draft-note">
-            {p.kind === "invitation"
-              ? "Demo invitation update"
-              : "Simulated send"}
-          </span>
-        </div>
-      )}
-      {p.kind === "warning" && (
-        <p className="warning-acknowledgment">
-          Approving records this check in the event history.
-        </p>
-      )}
-      <details className="proposal-sources">
-        <summary>
-          <FileText size={12} />
-          Based on {p.evidence.length || 1}{" "}
-          {p.evidence.length <= 1 ? "source" : "sources"}
-          <ChevronDown size={12} />
-        </summary>
-        <div className="evidence">
-          {p.evidence.length ? (
-            p.evidence.map((e, i) => (
-              <p key={i}>
-                {sources.find((source) => source.id === e)?.title || e}
-              </p>
-            ))
-          ) : (
-            <p>Your current event details</p>
-          )}
-        </div>
-      </details>
-      {held && (
-        <div className="prerequisite-message">
-          <Clock3 size={12} />
-          <span>
-            {prerequisites.some((item) => item.status === "denied")
-              ? "A related update was denied. This suggestion is on hold."
-              : `First complete: ${prerequisites.map((item) => item.title).join(", ") || "the related update"}.`}
-          </span>
-        </div>
-      )}
-      <div className="proposal-actions">
-        <button
-          className="approve-button"
-          disabled={deciding || held}
-          onClick={() => onDecision(p, "approve")}
-        >
-          {busy === `approve-${p.id}` ? (
-            <LoaderCircle size={14} className="spin" />
-          ) : (
-            <Check size={14} />
-          )}
-          Approve
-        </button>
-        <button
-          className="deny-button"
-          disabled={deciding}
-          onClick={() => onDecision(p, "deny")}
-        >
-          {busy === `deny-${p.id}` ? (
-            <LoaderCircle size={14} className="spin" />
-          ) : (
-            <X size={14} />
-          )}
-          Deny
-        </button>
-        <span className="proposal-time">{when(p.createdAt)}</span>
-      </div>
-    </article>
-  );
-}
-
 function CreateProject({
   busy,
   onClose,
@@ -1452,10 +856,9 @@ function CreateProject({
             <X size={20} />
           </button>
         </div>
-        <h2 id="create-title">Something to look forward to.</h2>
+        <h2 id="create-title">Create event</h2>
         <p>
-          Give your event a name. We’ll start with a complete sample plan you
-          can make your own.
+          Name your event, then add its details.
         </p>
         <form
           onSubmit={(e) => {
@@ -1468,14 +871,14 @@ function CreateProject({
             <input
               autoFocus
               maxLength={100}
-              placeholder="e.g. Christmas dinner"
+              placeholder="Event name"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
           </label>
           <div className="create-note">
             <Folder size={15} />
-            Includes demo planning files, budget, and vendors.
+            Includes an editable event plan and budget.
           </div>
           <button className="primary" disabled={!name.trim() || busy}>
             {busy ? (

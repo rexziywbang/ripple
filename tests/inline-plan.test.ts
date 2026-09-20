@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { parseInlineValue } from '../web/src/InlinePlan';
+import { equipmentAllowance, parseInlineValue, staffingEstimate } from '../web/src/InlinePlan';
+import { initialFacts } from '../server/fixtures';
+import type { Facts, ProjectState } from '../shared/types';
+
+describe('staffing estimate', () => {
+  it('updates the total from editable headcount and preserves the saved planning rate', () => {
+    const facts = { staffCount: 5, staffCostEachCents: 30000 };
+    expect(staffingEstimate(facts)).toEqual({ value: '$1,500', status: 'Planning estimate · saved staffing rate' });
+    expect(staffingEstimate({ ...facts, staffCount: 6 }).value).toBe('$1,800');
+    expect(facts.staffCostEachCents).toBe(30000);
+  });
+  it('does not display missing staffing rates as a free quote', () => {
+    expect(staffingEstimate({ staffCount: 5, staffCostEachCents: 0 }).value).toBe('Cost to confirm');
+    expect(staffingEstimate({ staffCount: 0, staffCostEachCents: 0 }).value).toBe('No staff planned');
+  });
+});
 
 describe('inline plan value validation', () => {
   it('does not turn an empty numeric draft into zero, even for optional fields', () => {
@@ -79,5 +94,63 @@ describe('inline plan value validation', () => {
     expect(parseInlineValue('  ').ok).toBe(false);
     expect(parseInlineValue('  Grand Ballroom  ')).toEqual({ ok: true, value: 'Grand Ballroom' });
     expect(parseInlineValue('x'.repeat(8001)).ok).toBe(false);
+  });
+});
+
+describe('equipment allowance provenance', () => {
+  const state = (patch: Partial<Facts> = {}): Pick<ProjectState, 'project' | 'sources'> => ({
+    project: {
+      id: 'event', name: 'Christmas dinner', revision: 1, createdAt: '2026-09-20T00:00:00Z',
+      facts: { ...initialFacts, equipmentCostCents: 150000, venueIncludesAV: false, venueDetailsPending: false, ...patch },
+    },
+    sources: [{ id: 'equipment-contract', area: 'equipment', title: 'AV rental agreement', path: '/av.md', content: '# AV rental\nProjector, microphones and sound: $1,800. Confirm the scope before booking.' }],
+  });
+
+  it('keeps the saved allowance distinct from an older record price and its scope', () => {
+    const current = state();
+    const presentation = equipmentAllowance(current);
+    expect(presentation.value).toBe('$1,500');
+    expect(presentation.status).toBe('Provisional estimate · quote not verified');
+    expect(presentation.requirements).toBe('Recorded scope: Projector, microphones and sound. Check against the event program and venue inclusions.');
+    expect(presentation.requirements).not.toContain('$1,800');
+    expect(current.project.facts.equipmentCostCents).toBe(150000);
+  });
+
+  it('does not carry a previous included-AV claim into a new unverified venue', () => {
+    const presentation = equipmentAllowance(state({ venueDetailsPending: true, venueIncludesAV: true, equipmentCostCents: 0 }));
+    expect(presentation.value).toBe('$0');
+    expect(presentation.status).toBe('Previous allowance · venue AV unconfirmed');
+    expect(presentation.retainRental).toBe(false);
+  });
+
+  it('can show sourced AV while a new venue price is still unknown', () => {
+    const presentation = equipmentAllowance(state({ venueDetailsPending: true, venueAVPending: false, venueIncludesAV: true, equipmentCostCents: 0 }));
+    expect(presentation.value).toBe('Included with venue');
+    expect(presentation.status).toBe('AV marked included in the venue plan');
+  });
+
+  it('keeps unverified AV separate from an established room price', () => {
+    const presentation = equipmentAllowance(state({ venueDetailsPending: false, venueAVPending: true, venueIncludesAV: true, equipmentCostCents: 0 }));
+    expect(presentation.value).toBe('$0');
+    expect(presentation.status).toBe('Previous allowance · venue AV unconfirmed');
+    expect(presentation.retainRental).toBe(false);
+  });
+
+  it('keeps the included-AV zero-cost state after the external rental is removed', () => {
+    const presentation = equipmentAllowance(state({ venueIncludesAV: true, equipmentCostCents: 0 }));
+    expect(presentation.value).toBe('Included with venue');
+    expect(presentation.status).toBe('AV marked included in the venue plan');
+    expect(presentation.retainRental).toBe(false);
+  });
+
+  it('retains a nonzero rental allowance while cancellation remains unconfirmed', () => {
+    const presentation = equipmentAllowance(state({ venueIncludesAV: true }));
+    expect(presentation.value).toBe('$1,500');
+    expect(presentation.retainRental).toBe(true);
+  });
+
+  it('asks for a scope check when records do not identify equipment', () => {
+    const current = state(); current.sources = [];
+    expect(equipmentAllowance(current).requirements).toBe('Equipment needs checking against venue inclusions and the event program.');
   });
 });

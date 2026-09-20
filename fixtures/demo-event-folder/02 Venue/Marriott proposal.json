@@ -1,0 +1,16 @@
+{
+  "provenance": "fictional_scenario",
+  "disclaimer": "The venue identity and published banquet capacity are real. The price, included equipment and cancellation terms below are invented walkthrough assumptions, not an offer from Marriott or a reservation.",
+  "proposal": {
+    "venue": "Boston Marriott Cambridge",
+    "venueAddress": "50 Broadway, Cambridge, MA 02142",
+    "room": "Grand Ballroom",
+    "date": "2026-12-11",
+    "attendance": 200,
+    "venueCapacity": 600,
+    "venueCostCents": 800000,
+    "venueIncludesAV": true,
+    "includedEquipment": ["Projector", "Microphones", "Sound system"],
+    "duplicateAVCancellationWithoutPenalty": true
+  }
+}

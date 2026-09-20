@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Ripple Mail",
+  "description": "Send approved Ripple emails to your inbox or the configured demo recipient through a paired Gmail tab.",
+  "version": "0.3.1",
+  "minimum_chrome_version": "120",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": ["http://127.0.0.1/*", "https://mail.google.com/*", "https://www.evite.com/*"],
+  "background": { "service_worker": "worker.js", "type": "module" },
+  "content_scripts": [
+    { "matches": ["https://mail.google.com/mail/*"], "js": ["gmail-replies.js", "gmail.js"], "run_at": "document_idle" },
+    { "matches": ["https://www.evite.com/invitation/*"], "js": ["evite.js"], "run_at": "document_idle" }
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "Ripple Mail" }
+}

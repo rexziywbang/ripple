@@ -1,0 +1,52 @@
+.communications-side { display: grid; gap: 20px; min-width: 0; }
+.invitation-preview { overflow: hidden; border: 1px solid #e4dbe5; border-radius: 9px; background: #fffdfd; }
+.invitation-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 19px; border-bottom: 1px solid #eee7ee; }
+.invitation-heading h2 { display: flex; align-items: center; gap: 8px; margin: 0; color: #5f4a65; font-size: 13px; font-weight: 500; }
+.invitation-heading > span { font-size: 10px; color: #8d7d91; white-space: nowrap; }
+.invitation-paper { margin: 15px; padding: 24px 22px 9px; border: 1px solid #e8e0e9; border-top: 3px solid #8a5f95; background: #fff; animation: invitation-reveal .35s ease-out; }
+.invitation-kicker { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.invitation-kicker > span:first-child { color: #896d8e; text-transform: uppercase; letter-spacing: .16em; font-size: 9px; font-weight: 500; }
+.invitation-status { display: inline-flex; align-items: center; gap: 4px; color: #97816c; font-size: 9px; line-height: 1.4; }
+.invitation-status.is-approved { color: #796080; }
+.invitation-paper h3 { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(25px, 2.5vw, 34px); font-weight: 400; line-height: 1.2; letter-spacing: -.035em; color: #3e2e43; margin: 19px 0 24px; overflow-wrap: anywhere; }
+.invitation-details { margin: 0; }
+.invitation-details > div { display: grid; grid-template-columns: 25px minmax(0, 1fr); gap: 9px; padding: 0 0 17px; }
+.invitation-details dt { color: #9a80a0; padding-top: 2px; }
+.invitation-details dt span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.invitation-details dd { margin: 0; color: #56445c; font-size: 12px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
+.invitation-details dd small { display: block; margin-top: 3px; color: #938397; font-size: 10px; font-weight: 400; }
+.invitation-exact-copy { color: #6c5872; font-size: 12px; line-height: 1.7; white-space: pre-wrap; margin-bottom: 17px; }
+.invitation-pending { padding: 13px 15px; margin: 0 15px 13px; border-radius: 5px; background: #f6f0f8; }
+.invitation-pending > strong { display: flex; align-items: center; gap: 6px; color: #795582; font-size: 11px; font-weight: 500; }
+.invitation-pending dl { margin: 10px 0 0; }
+.invitation-pending dl > div { display: grid; grid-template-columns: 43px minmax(0, 1fr); gap: 8px; margin-top: 5px; font-size: 10px; line-height: 1.6; }
+.invitation-pending dt { color: #98869e; }
+.invitation-pending dd { color: #67506e; margin: 0; overflow-wrap: anywhere; }
+.invitation-pending > p { color: #796581; margin: 8px 0 0; font-size: 10px; line-height: 1.6; white-space: pre-wrap; }
+.invitation-footnote { margin: 0; padding: 0 18px 15px; color: #9c8aa0; font-size: 9px; line-height: 1.65; }
+.invitation-paper.invitation-designed { padding: 0; border: 1px solid #d8c4b4; border-top-width: 1px; border-radius: 3px; overflow: hidden; background: #fcf7ef; box-shadow: 0 4px 18px #4a2c3910; }
+.invitation-artwork { aspect-ratio: 2 / 3; width: 100%; background: #362234; overflow: hidden; }
+.invitation-artwork img { display: block; width: 100%; height: auto; aspect-ratio: 2 / 3; object-fit: contain; color: #f6e9d9; }
+.invitation-designed .invitation-copy { padding: 23px 22px 8px; border-top: 1px solid #d9b99c; }
+.invitation-designed .invitation-kicker { margin-bottom: 24px; }
+.invitation-designed .invitation-kicker > span:first-child { color: #9a745a; font-size: 9px; letter-spacing: .18em; }
+.invitation-designed .invitation-status { color: #846c59; }
+.invitation-designed .invitation-status.is-approved { color: #735264; }
+.invitation-designed .invitation-details dt { color: #a68164; }
+.invitation-designed .invitation-details dd { color: #493440; font-size: 13px; line-height: 1.65; }
+.invitation-designed .invitation-details dd small { color: #887366; font-size: 11px; }
+.invitation-paper h3.invitation-accessible-title { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 480px) {
+  .invitation-paper.invitation-designed { padding: 0; }
+  .invitation-designed .invitation-copy { padding: 20px 18px 6px; }
+  .invitation-designed .invitation-details dd { font-size: 13px; }
+}
+@keyframes invitation-reveal { from { opacity: .6; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 480px) { .invitation-paper { margin: 12px; padding: 19px 17px 6px; } .invitation-kicker { align-items: flex-start; } .invitation-status { max-width: 110px; } }
+@media (prefers-reduced-motion: reduce) { .invitation-paper { animation: none; } }
+.local-records-summary { display: flex; align-items: center; gap: 13px; margin-top: 18px; padding: 17px 19px; border: 1px solid #e8e0e9; border-radius: 7px; background: #fffdfd; color: #927798; }
+.local-records-summary > svg { flex-shrink: 0; }
+.local-records-summary > div { flex: 1; }
+.local-records-summary h2 { margin: 0; font-size: 12px; font-weight: 500; color: #68506f; }
+.local-records-summary p { margin: 5px 0 0; font-size: 11px; line-height: 1.5; color: #948199; }
+.local-records-summary > span { display: flex; align-items: center; gap: 4px; color: #927c99; font-size: 10px; }

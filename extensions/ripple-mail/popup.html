@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Ripple Mail</title><link rel="stylesheet" href="popup.css"></head>
+<body><main>
+  <h1>Ripple Mail</h1>
+  <p>Approved emails send automatically through one Gmail tab, to your inbox or the configured demo recipient.</p>
+  <div id="status" role="status">Loading…</div>
+  <p id="account"></p><p id="replies"></p><p id="flight"></p>
+  <form id="pair">
+    <label for="token">Local pairing token</label>
+    <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste token from local Ripple" required>
+    <a href="http://127.0.0.1:8787/api/mail-worker/pairing" target="_blank" rel="noreferrer">Open local pairing page</a>
+    <label for="tab">Dedicated Gmail tab</label><select id="tab" required></select>
+    <button type="submit">Pair & enable</button>
+  </form>
+  <div class="buttons"><button id="pause" type="button">Pause</button><button id="resume" type="button">Resume</button><button id="check" type="button">Check status</button></div>
+  <small>Keep Ripple and the selected Gmail tab open. An uncertain send pauses the worker and is never retried automatically. Reload Gmail after installing this extension.</small>
+</main><script type="module" src="popup.js"></script></body></html>

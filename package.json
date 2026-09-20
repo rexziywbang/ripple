@@ -5,14 +5,20 @@
  "type": "module",
  "scripts": {
   "dev": "concurrently -k -n api,web \"npm:dev:api\" \"npm:dev:web\"",
-  "dev:api": "NODE_OPTIONS=--experimental-sqlite tsx watch server/index.ts",
+  "dev:api": "NODE_OPTIONS=--experimental-sqlite tsx server/index.ts",
+  "dev:api:watch": "NODE_OPTIONS=--experimental-sqlite tsx watch server/index.ts",
   "dev:web": "vite --host 127.0.0.1",
   "build": "tsc --noEmit && vite build",
   "start": "NODE_OPTIONS=--experimental-sqlite tsx server/index.ts",
   "test": "NODE_OPTIONS=--experimental-sqlite vitest run",
-  "smoke:ai": "NODE_OPTIONS=--experimental-sqlite tsx server/smoke.ts"
+  "smoke:ai": "NODE_OPTIONS=--experimental-sqlite tsx server/smoke.ts",
+  "partiful:setup": "bash scripts/setup-partiful.sh",
+  "partiful:login": "./.tools/partiful auth login",
+  "partiful:status": "./.tools/partiful doctor",
+  "venue:index": "tsx scripts/build-venue-index.ts"
  },
  "dependencies": {
+  "@huggingface/transformers": "^4.3.0",
   "@openai/agents": "^0.18.0",
   "dotenv": "^16.6.1",
   "express": "^5.1.0",

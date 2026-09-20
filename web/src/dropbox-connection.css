@@ -1,0 +1,56 @@
+.dropbox-connection { overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--paper); color: var(--ink); }
+.dc-heading { display: flex; align-items: center; gap: 13px; padding: 20px 22px 18px; }
+.dc-icon { display: grid; place-items: center; width: 42px; height: 42px; flex-shrink: 0; color: var(--accent); background: var(--surface); border: 1px solid var(--border); border-radius: 9px; }
+.dc-heading > div { flex: 1; min-width: 0; }
+.dc-heading h2 { margin: 0; color: var(--ink); font-size: 17px; font-weight: 400; line-height: 1.5; letter-spacing: -.2px; }
+.dc-heading p { margin: 3px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.dc-configured { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; }
+.dc-body { padding: 0 22px; }
+.dc-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dc-body > .dc-controls { margin-bottom: 17px; }
+.dc-controls > button, .dc-open { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; font: inherit; font-size: 13px; line-height: 1.5; text-decoration: none; cursor: pointer; }
+.dc-primary { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+.dc-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.dc-secondary { background: var(--paper); color: var(--ink); }
+.dc-secondary:hover:not(:disabled) { background: var(--surface); }
+.dc-controls > .dc-open { margin-left: auto; padding: 5px 0; border: 0; color: var(--muted); font-size: 12px; }
+.dc-open:hover { color: var(--ink); }
+.dc-controls > button:disabled { opacity: .5; cursor: default; }
+.dc-import-hint { margin: 10px 0 17px; color: var(--subtle); font-size: 12px; line-height: 1.6; }
+.dc-folder-picker { padding: 13px; margin: 0 0 18px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+.dc-folder-option { display: flex; gap: 10px; align-items: center; color: var(--muted); }
+.dc-folder-option > div { flex: 1; min-width: 0; }
+.dc-folder-option strong { display: block; font-size: 13px; font-weight: 400; color: var(--ink); overflow-wrap: anywhere; }
+.dc-folder-option span { display: block; margin-top: 3px; font-size: 11px; color: var(--subtle); }
+.dc-use-folder { display: inline-flex; align-items: center; gap: 6px; margin-top: 13px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--paper); color: var(--ink); font: inherit; font-size: 12px; cursor: pointer; }
+.dc-use-folder:disabled { opacity: .5; cursor: default; }
+.dc-folder-picker > p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.dc-files { margin: 0 0 16px; }
+.dc-files-label { display: flex; gap: 7px; align-items: baseline; padding: 0 0 7px; color: var(--muted); font-size: 12px; }
+.dc-files-label span { color: var(--subtle); font-size: 11px; }
+.dc-file { display: flex; align-items: center; gap: 9px; padding: 8px 0; color: var(--muted); text-decoration: none; border-top: 1px solid var(--border); font-size: 12px; }
+.dc-file > svg { flex-shrink: 0; color: var(--subtle); }
+.dc-file > span { flex: 1; min-width: 0; color: var(--ink); overflow-wrap: anywhere; }
+.dc-file small { color: var(--subtle); font-size: 10px; }
+.dc-file:hover > span { color: var(--accent); }
+.dc-more-files > summary { padding: 8px 0 0; color: var(--subtle); font-size: 11px; cursor: pointer; }
+.dc-more-files[open] > summary { margin-bottom: 8px; }
+.dc-local-import { margin-bottom: 10px; }
+.dc-details { border-top: 1px solid var(--border); }
+.dc-details > summary { padding: 12px 0; color: var(--subtle); font-size: 12px; line-height: 1.5; cursor: pointer; }
+.dc-details > div { padding-bottom: 15px; }
+.dc-details p { margin: 0 0 9px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.dc-export, .dc-verified > a { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; line-height: 1.6; text-decoration: none; }
+.dc-export:hover, .dc-verified > a:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.dc-loading { display: flex; align-items: center; gap: 7px; padding: 0 22px 21px; color: var(--subtle); font-size: 13px; }
+.dc-queue, .dc-success, .dc-failure, .dc-error { display: flex; align-items: center; gap: 7px; margin: 0 0 14px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.dc-error, .dc-failure, .dc-details .dc-failure-copy { color: #946442; }
+.dc-error { align-items: flex-start; }
+.dc-error > svg { flex-shrink: 0; margin-top: 3px; }
+.dc-error > span { flex: 1; }
+.dc-error > button { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; }
+.dc-details .dc-verified { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.dc-spin { animation: dc-spin 1s linear infinite; }
+@keyframes dc-spin { to { transform: rotate(360deg); } }
+@media (max-width: 600px) { .dc-heading { padding: 18px 16px 16px; gap: 10px; } .dc-body { padding: 0 16px; } .dc-controls > button { font-size: 12px; padding: 6px 10px; } .dc-controls > .dc-open { font-size: 11px; } }
+@media (prefers-reduced-motion: reduce) { .dc-spin { animation: none; } }

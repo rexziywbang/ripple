@@ -6,6 +6,7 @@ import {
   ChevronDown,
   CircleAlert,
   ClipboardList,
+  ExternalLink,
   LoaderCircle,
   MapPin,
   Monitor,
@@ -15,6 +16,8 @@ import {
 } from "lucide-react";
 import type { Area, FactPatch, Facts, ProjectState } from "../../shared/types";
 import "./inline-plan.css";
+import PlaceMatches, { placeSelectionPatch } from "./PlaceMatches";
+import type { PlaceMatch } from "./PlaceMatches";
 
 type FieldKind = "text" | "integer" | "money" | "date" | "time" | "timezone";
 type ParseResult =
@@ -105,10 +108,35 @@ const dollars = (cents: number) =>
     minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
     maximumFractionDigits: 2,
   }).format(cents / 100);
-const rawValue = (value: string | number, kind: FieldKind = "text") =>
-  kind === "money" ? String(Number(value) / 100) : String(value);
+
+export function equipmentAllowance(state: Pick<ProjectState, "project" | "sources">) {
+  const f = state.project.facts;
+  const venuePending = f.venueAVPending ?? f.venueDetailsPending ?? false;
+  const included = !venuePending && f.venueIncludesAV && f.equipmentCostCents === 0;
+  // This is the scope written in the existing AV record, not an inferred quote.
+  // Its listed price must never replace the user's current planning allowance.
+  const record = state.sources.find(source => source.id === "equipment-contract" && source.area === "equipment");
+  const scope = record?.content.split("\n").map(line => /^([^:$]{1,160}):\s*\$/.exec(line.trim())?.[1].trim()).find(Boolean);
+  return {
+    value: included ? "Included with venue" : dollars(f.equipmentCostCents),
+    status: included ? "AV marked included in the venue plan"
+      : venuePending ? "Previous allowance · venue AV unconfirmed" : "Provisional estimate · quote not verified",
+    requirements: scope ? `Recorded scope: ${scope}. Check against the event program and venue inclusions.`
+      : "Equipment needs checking against venue inclusions and the event program.",
+    retainRental: !venuePending && f.venueIncludesAV && f.equipmentCostCents > 0,
+  };
+}
+export function staffingEstimate(facts: Pick<Facts, "staffCount" | "staffCostEachCents">) {
+  return {
+    value: facts.staffCount === 0 ? "No staff planned" : facts.staffCostEachCents > 0 ? dollars(facts.staffCount * facts.staffCostEachCents) : "Cost to confirm",
+    status: facts.staffCostEachCents > 0 ? "Planning estimate · saved staffing rate" : "Staffing rate not yet confirmed",
+  };
+}
+const rawValue = (value: string | number, kind: FieldKind = "text", zeroIsUnset = false) =>
+  zeroIsUnset && value === 0 ? "" : kind === "money" ? String(Number(value) / 100) : String(value);
 const statusText = (status: Facts["cateringStatus"]) =>
   ({
+    not_set: "Caterer not set",
     confirmed: "Confirmed",
     awaiting_quote: "Quote pending",
     quoted: "Quote received · not yet booked",
@@ -123,7 +151,11 @@ type FieldProps = FieldOptions & {
   onSave: InlinePlanProps["onSave"];
   suffix?: string;
   wide?: boolean;
+  hideLabel?: boolean;
   multiline?: boolean;
+  zeroIsUnset?: boolean;
+  placeKind?: "venue" | "catering";
+  projectId?:string;
 };
 
 /** Each field owns its draft. Incoming snapshots cannot replace active or unsaved typing. */
@@ -139,10 +171,15 @@ function InlineField({
   optional,
   suffix,
   wide,
+  hideLabel,
   multiline,
+  zeroIsUnset = false,
+  placeKind,
+  projectId,
 }: FieldProps) {
   const inputId = useId();
-  const [draft, setDraft] = useState(() => rawValue(value, kind));
+  const [showMatches, setShowMatches] = useState(false);
+  const [draft, setDraft] = useState(() => rawValue(value, kind, zeroIsUnset));
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
   );
@@ -167,17 +204,17 @@ function InlineField({
     savedRef.current = value;
     if (pendingCount.current > 0 || focusedRef.current || dirtyRef.current)
       return;
-    const next = rawValue(value, kind);
+    const next = rawValue(value, kind, zeroIsUnset);
     draftRef.current = next;
     setDraft(next);
-  }, [value, kind]);
+  }, [value, kind, zeroIsUnset]);
 
-  async function commit() {
+  async function commit(extraPatch: FactPatch = {}) {
     // Focusing a field is not an edit. A newer server value must not be written
     // back to its old value merely because the user later leaves that field.
     if (!dirtyRef.current) {
       if (pendingCount.current === 0) {
-        const current = rawValue(savedRef.current, kind);
+        const current = rawValue(savedRef.current, kind, zeroIsUnset);
         draftRef.current = current;
         setDraft(current);
       }
@@ -196,12 +233,12 @@ function InlineField({
     }
     const baseline =
       pendingCount.current > 0 ? lastSubmitted.current : savedRef.current;
-    if (parsed.value === baseline) {
+    if (parsed.value === baseline && Object.keys(extraPatch).length === 0) {
       if (pendingCount.current === 0) {
         dirtyRef.current = false;
         setStatus("idle");
         setError("");
-        const clean = rawValue(parsed.value, kind);
+        const clean = rawValue(parsed.value, kind, zeroIsUnset);
         draftRef.current = clean;
         setDraft(clean);
       }
@@ -215,7 +252,7 @@ function InlineField({
     setError("");
     let saved = false;
     try {
-      saved = await onSave(area, { [field]: parsed.value } as FactPatch);
+      saved = await onSave(area, { [field]: parsed.value, ...extraPatch } as FactPatch);
     } catch {
       saved = false;
     }
@@ -225,7 +262,7 @@ function InlineField({
     if (sequence !== saveSequence.current) return;
     if (saved) {
       if (editVersion.current === version) {
-        const clean = rawValue(parsed.value, kind);
+        const clean = rawValue(parsed.value, kind, zeroIsUnset);
         draftRef.current = clean;
         dirtyRef.current = false;
         setDraft(clean);
@@ -242,18 +279,30 @@ function InlineField({
   }
 
   function restore() {
+    setShowMatches(false);
     editVersion.current++;
-    const restored = rawValue(savedRef.current, kind);
+    const restored = rawValue(savedRef.current, kind, zeroIsUnset);
     draftRef.current = restored;
     dirtyRef.current = false;
     setDraft(restored);
     setError("");
     setStatus(pendingCount.current > 0 ? "saving" : "idle");
   }
+  function selectPlace(place: PlaceMatch) {
+    if (!placeKind) return;
+    editVersion.current++;
+    draftRef.current = place.name;
+    dirtyRef.current = true;
+    setDraft(place.name);
+    setShowMatches(false);
+    void commit(placeSelectionPatch(placeKind, place));
+    window.requestAnimationFrame(() => document.getElementById(inputId)?.focus());
+  }
   const shared = {
     id: inputId,
     value: draft,
     "aria-label": label,
+    placeholder: zeroIsUnset ? "Not set" : optional ? "Add details" : "Not set",
     "aria-invalid": status === "error",
     "aria-describedby": status === "error" ? `${inputId}-status` : undefined,
     onFocus: () => {
@@ -266,12 +315,12 @@ function InlineField({
       draftRef.current = event.target.value;
       dirtyRef.current = true;
       setDraft(event.target.value);
+      if (placeKind) setShowMatches(true);
       setError("");
       setStatus(pendingCount.current > 0 ? "saving" : "idle");
     },
     onBlur: () => {
       focusedRef.current = false;
-      void commit();
     },
     onKeyDown: (
       event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -290,8 +339,15 @@ function InlineField({
   return (
     <div
       className={`ip-field${wide ? " ip-field-wide" : ""}${status === "error" ? " ip-field-error" : ""}`}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          focusedRef.current = false;
+          void commit();
+          setShowMatches(false);
+        }
+      }}
     >
-      <label htmlFor={inputId}>{label}</label>
+      <label className={hideLabel ? "ip-label-hidden" : undefined} htmlFor={inputId}>{label}</label>
       <div className={`ip-input-line${kind === "money" ? " ip-money" : ""}`}>
         {kind === "money" && (
           <span className="ip-currency" aria-hidden="true">
@@ -326,11 +382,6 @@ function InlineField({
             <LoaderCircle size={10} className="ip-spin" />
             Saving…
           </>
-        ) : status === "saved" ? (
-          <>
-            <Check size={10} />
-            Saved
-          </>
         ) : status === "error" ? (
           <>
             <CircleAlert size={11} />
@@ -340,6 +391,7 @@ function InlineField({
           <>&nbsp;</>
         )}
       </span>
+      {placeKind && showMatches && <PlaceMatches query={draft} kind={placeKind} projectId={projectId} onSelect={selectPlace} onDismiss={() => { setShowMatches(false); void commit(); window.requestAnimationFrame(() => document.getElementById(inputId)?.focus()); }} />}
     </div>
   );
 }
@@ -401,9 +453,7 @@ function InlineToggle({
       >
         {status === "saving"
           ? "Saving…"
-          : status === "saved"
-            ? "Saved"
-            : status === "error"
+          : status === "error"
               ? "Couldn’t save. Try again."
               : ""}
       </span>
@@ -439,9 +489,8 @@ function Section({
         {hint && <div className="ip-section-hint">{hint}</div>}
         {details && (
           <details className="ip-details">
-            <summary>
-              Details
-              <ChevronDown size={11} />
+            <summary aria-label={`${title} details`} title={`${title} details`}>
+              <ChevronDown size={14} />
             </summary>
             <div className="ip-detail-fields">{details}</div>
           </details>
@@ -453,11 +502,27 @@ function Section({
 
 export default function InlinePlan({ state, onSave }: InlinePlanProps) {
   const f = state.project.facts;
+  const equipment = equipmentAllowance(state);
+  const venuePending = "venueDetailsPending" in f && f.venueDetailsPending === true;
+  const capacityPending = f.venueCapacityPending ?? venuePending;
+  const avPending = f.venueAVPending ?? venuePending;
+  const venueEvidence = state.sources.find(source => source.id === f.venueCapacityEvidenceId)?.venueEvidence;
+  const currentVenueEvidence = venueEvidence?.name === f.venue && venueEvidence.address === f.venueAddress && venueEvidence.eventFormat === f.format ? venueEvidence : undefined;
+  const capacityEvidence = !capacityPending && currentVenueEvidence?.capacity?.guests === f.venueCapacity ? currentVenueEvidence.capacity : undefined;
+  const avEvidence = !avPending && currentVenueEvidence?.av?.included === f.venueIncludesAV ? currentVenueEvidence.av : undefined;
+  const evidenceLink = (url: string) => {
+    try { const parsed = new URL(url); return parsed.protocol === "https:" && !parsed.username && !parsed.password ? parsed.href : undefined; } catch { return undefined; }
+  };
   const remaining = f.budgetLimitCents - state.budget.totalCents;
   const incomplete = state.budget.lines.some(
     (line) => line.status === "awaiting quote",
   );
   const awaitingCateringQuote = f.cateringStatus === "awaiting_quote";
+  const cateringQuote = state.cateringQuote;
+  const matchedCateringQuote = cateringQuote?.status === "quoted";
+  const cateringLabel = matchedCateringQuote
+    ? f.cateringStatus === "confirmed" ? "Confirmed" : f.cateringStatus === "awaiting_confirmation" ? "Booking requested" : "Quoted"
+    : cateringQuote?.inquiry === "sent" ? "Quote requested" : cateringQuote?.inquiry === "approved" ? "Request approved" : cateringQuote?.inquiry === "draft" ? "Quote request prepared" : awaitingCateringQuote ? "Quote needed" : "Recorded rate";
   const field = (
     area: Area,
     key: keyof Facts,
@@ -472,8 +537,9 @@ export default function InlinePlan({ state, onSave }: InlinePlanProps) {
       area={area}
       field={key}
       label={label}
-      value={f[key] as string | number}
+      value={key === "venueAddress" ? f.venueAddress.replace(/\s*\(demo\)$/, "") : f[key] as string | number}
       onSave={onSave}
+      projectId={state.project.id}
       {...options}
     />
   );
@@ -481,7 +547,7 @@ export default function InlinePlan({ state, onSave }: InlinePlanProps) {
     <section className="inline-plan" aria-label="Your editable event plan">
       <div className="ip-sheet" key={state.project.id}>
         <Section
-          title="Event details"
+          title="When"
           icon={CalendarDays}
           tone="sage"
           details={
@@ -506,21 +572,15 @@ export default function InlinePlan({ state, onSave }: InlinePlanProps) {
           title="Guests"
           icon={Users}
           tone="blue"
-          hint={
-            f.attendance > f.venueCapacity ? (
-              <span className="ip-warning">
-                {f.attendance - f.venueCapacity} guests over venue capacity
-              </span>
-            ) : (
-              `${Math.max(0, f.venueCapacity - f.attendance)} places to spare at the venue`
-            )
-          }
+          hint={!capacityPending && f.venueCapacity > 0 && f.attendance > f.venueCapacity ? <span className="ip-warning">{f.attendance - f.venueCapacity} above recorded capacity</span> : undefined}
         >
           {field("guests", "attendance", "Expected guests", {
             kind: "integer",
             min: 1,
             max: 100000,
+            zeroIsUnset: true,
             suffix: "people",
+            hideLabel: true,
           })}
           {field("guests", "dietary", "Dietary requirements", {
             optional: true,
@@ -531,28 +591,41 @@ export default function InlinePlan({ state, onSave }: InlinePlanProps) {
           title="Venue"
           icon={MapPin}
           tone="sand"
-          hint={`${f.venueCapacity} seated · ${dollars(f.venueCostCents)}${f.venueIncludesAV ? " · AV included" : ""}`}
+          hint={capacityEvidence ? <>
+            <span>{capacityEvidence.guests} {capacityEvidence.layout.replaceAll("_", " ")} · {capacityEvidence.room}</span>
+            {evidenceLink(capacityEvidence.sourceUrl) && <a href={evidenceLink(capacityEvidence.sourceUrl)} target="_blank" rel="noreferrer" aria-label="Published room capacity source"><ExternalLink size={11} /></a>}
+          </> : venuePending ? "Venue quote needed" : undefined}
           details={
             <>
               {field("venue", "venueAddress", "Venue address", { wide: true })}
-              {field("venue", "venueCapacity", "Seated capacity", {
-                kind: "integer",
-              })}
-              {field("venue", "venueCostCents", "Room cost", { kind: "money" })}
-              <InlineToggle
+              {capacityEvidence ? <div className="ip-source-value">
+                <span>{capacityEvidence.guests} guests · {capacityEvidence.room}</span>
+                <small>{capacityEvidence.layout.replaceAll("_", " ")}{evidenceLink(capacityEvidence.sourceUrl) && <a href={evidenceLink(capacityEvidence.sourceUrl)} target="_blank" rel="noreferrer">Source <ExternalLink size={10} /></a>}</small>
+              </div> : !capacityPending ? field("venue", "venueCapacity", "Recorded capacity", { kind: "integer", zeroIsUnset: true }) : <p className="ip-detail-note">{currentVenueEvidence?.roomLimit ? `${currentVenueEvidence.roomLimit.guests}-person room limit; seated capacity not published.` : "No published seating capacity found."}</p>}
+              {venuePending ? (
+                <div className="ip-prior-pricing">
+                  <div><span>Previous room estimate</span><strong>{dollars(f.venueCostCents)}</strong></div>
+                  <p>Carried in the budget until a new quote arrives.</p>
+                </div>
+              ) : field("venue", "venueCostCents", "Recorded room cost", { kind: "money" })}
+              {avPending ? <p className="ip-detail-note">AV package not published.</p> : avEvidence ? <div className="ip-source-value">
+                <span>{avEvidence.included ? "AV included" : "AV not included"}{avEvidence.items.length > 0 && ` · ${avEvidence.items.join(", ")}`}</span>
+                {evidenceLink(avEvidence.sourceUrl) && <small><a href={evidenceLink(avEvidence.sourceUrl)} target="_blank" rel="noreferrer">Source <ExternalLink size={10} /></a></small>}
+              </div> : <InlineToggle
                 label="Audio & visual equipment included"
                 area="venue"
                 field="venueIncludesAV"
                 value={f.venueIncludesAV}
                 onSave={onSave}
-              />
+              />}
+
             </>
           }
         >
-          {field("venue", "venue", "Location", { wide: true })}
+          {field("venue", "venue", "Location", { wide: true, hideLabel: true, placeKind: "venue" })}
         </Section>
         <Section
-          title="Food & drink"
+          title="Catering"
           icon={Utensils}
           tone="rose"
           hint={
@@ -564,9 +637,9 @@ export default function InlinePlan({ state, onSave }: InlinePlanProps) {
                     : "ip-waiting"
                 }
               >
-                {statusText(f.cateringStatus)}
+                {cateringLabel}
               </span>
-              {!awaitingCateringQuote && (
+              {!awaitingCateringQuote && f.caterer && f.cateringPerPersonCents > 0 && (
                 <>
                   <span className="ip-hint-separator">·</span>
                   {dollars(f.cateringPerPersonCents)} per person
@@ -575,37 +648,26 @@ export default function InlinePlan({ state, onSave }: InlinePlanProps) {
             </>
           }
           details={
-            awaitingCateringQuote ? (
+            <>
               <div className="ip-prior-pricing">
-                <p>
-                  New pricing is pending. Earlier amounts are shown only for
-                  reference.
-                </p>
                 <div>
-                  <span>Previous price per guest</span>
+                  <span>{matchedCateringQuote ? "Per guest" : "Recorded per guest"}</span>
                   <strong>{dollars(f.cateringPerPersonCents)}</strong>
                 </div>
                 <div>
-                  <span>Previous delivery fee</span>
+                  <span>{matchedCateringQuote ? "Delivery" : "Recorded delivery"}</span>
                   <strong>{dollars(f.cateringDeliveryCents)}</strong>
                 </div>
+                {!matchedCateringQuote && <p>No complete quote for this date and guest count.</p>}
               </div>
-            ) : (
-              <>
-                {field(
-                  "catering",
-                  "cateringPerPersonCents",
-                  "Price per guest",
-                  { kind: "money" },
-                )}
-                {field("catering", "cateringDeliveryCents", "Delivery fee", {
-                  kind: "money",
-                })}
-              </>
-            )
+              {matchedCateringQuote && cateringQuote.sourceTitle && <div className="ip-source-value">
+                <span>{cateringQuote.sourceTitle}</span>
+                <small>{cateringQuote.simulated ? "Scenario quote" : cateringQuote.provenance === "document" ? "Event document" : "Received email"}{cateringQuote.sourcePath && evidenceLink(cateringQuote.sourcePath) && <a href={evidenceLink(cateringQuote.sourcePath)} target="_blank" rel="noreferrer">Source <ExternalLink size={10} /></a>}</small>
+              </div>}
+            </>
           }
         >
-          {field("catering", "caterer", "Catering partner", { wide: true })}
+          {field("catering", "caterer", "Catering partner", { wide: true, hideLabel: true, placeKind: "catering" })}
         </Section>
         <Section
           title="Budget"
@@ -613,11 +675,12 @@ export default function InlinePlan({ state, onSave }: InlinePlanProps) {
           tone="sage"
           hint={
             <>
-              {dollars(state.budget.totalCents)}{" "}
-              {incomplete ? "known costs" : "estimated"}
-              <span className="ip-hint-separator">·</span>
-              {incomplete ? (
-                <span className="ip-waiting">Waiting for quote</span>
+              {f.budgetLimitCents <= 0 ? (
+                "Budget not set"
+              ) : venuePending ? (
+                <span className="ip-waiting">Venue quote needed</span>
+              ) : incomplete ? (
+                <span className="ip-waiting">Quote not yet received</span>
               ) : (
                 <span className={remaining < 0 ? "ip-warning" : ""}>
                   {dollars(Math.abs(remaining))}{" "}
@@ -651,12 +714,12 @@ export default function InlinePlan({ state, onSave }: InlinePlanProps) {
                 ))}
               </dl>
               <div className="ip-budget-sum">
-                <strong>{incomplete ? "Known costs" : "Total estimate"}</strong>
+                <strong>{venuePending ? "Planning estimate" : incomplete ? "Known costs" : "Total estimate"}</strong>
                 <strong>{dollars(state.budget.totalCents)}</strong>
               </div>
-              {incomplete && (
+              {(incomplete || venuePending) && (
                 <p className="ip-budget-note">
-                  The total is incomplete until the quote arrives.
+                  {venuePending ? "Includes the previous venue estimate. The selected venue’s capacity, price, and AV are not yet confirmed." : "The total is incomplete until the quote arrives."}
                 </p>
               )}
             </div>
@@ -665,54 +728,46 @@ export default function InlinePlan({ state, onSave }: InlinePlanProps) {
           {field("budget", "budgetLimitCents", "Total budget", {
             kind: "money",
             wide: true,
+            hideLabel: true,
           })}
         </Section>
         <Section
           title="Staff"
           icon={ClipboardList}
           tone="lavender"
-          hint={`${dollars(f.staffCostEachCents)} per team member`}
-          details={field(
-            "staff",
-            "staffCostEachCents",
-            "Cost per team member",
-            { kind: "money", wide: true },
-          )}
         >
           {field("staff", "staffCount", "Team members", {
             kind: "integer",
             suffix: "people",
-            wide: true,
+            hideLabel: true,
           })}
+          <div className="ip-staff-summary">
+            <strong>{staffingEstimate(f).value}</strong>
+            <small>{f.staffCostEachCents > 0 ? "Estimated total · saved rate" : "Rate unconfirmed"}</small>
+          </div>
         </Section>
         <Section
           title="Equipment"
           icon={Monitor}
           tone="sand"
-          hint={
-            f.venueIncludesAV
-              ? "House audio & visual equipment is included"
-              : "Audio, visual & event equipment"
-          }
-          details={
-            <InlineToggle
-              label="Equipment included with the venue"
-              area="equipment"
-              field="venueIncludesAV"
-              value={f.venueIncludesAV}
-              onSave={onSave}
-            />
-          }
+          details={<>
+            <p className="ip-detail-note">{equipment.requirements}</p>
+            {equipment.retainRental && <p className="ip-detail-note">Existing rental allowance stays until cancellation is confirmed.</p>}
+            {!avPending && <InlineToggle
+                label="Venue AV included"
+                area="equipment"
+                field="venueIncludesAV"
+                value={f.venueIncludesAV}
+                onSave={onSave}
+              />}
+          </>}
         >
-          {field("equipment", "equipmentCostCents", "Rental estimate", {
-            kind: "money",
-            wide: true,
-          })}
+          <div className="ip-equipment-summary">
+            <strong>{equipment.value}</strong>
+            <small>{equipment.status}</small>
+          </div>
         </Section>
       </div>
-      <footer className="ip-footer">
-        Enter or leave a field to save. Esc restores its last saved value.
-      </footer>
     </section>
   );
 }

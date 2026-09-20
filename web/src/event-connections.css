@@ -1,0 +1,24 @@
+.ec-panel { max-width: 720px; margin: 8px auto 0; color: var(--ink); }
+.ec-heading { padding: 4px 0 18px; }
+.ec-heading h2 { margin: 0; font-size: 21px; line-height: 1.35; font-weight: 400; letter-spacing: -.4px; }
+.ec-providers { margin-top: 18px; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--paper); }
+.ec-provider { display: flex; align-items: center; gap: 12px; padding: 13px 18px; }
+.ec-provider + .ec-provider { border-top: 1px solid var(--border); }
+.ec-icon { display: grid; place-items: center; width: 28px; height: 28px; flex: none; color: var(--subtle); }
+.ec-provider-copy { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 14px; }
+.ec-provider-copy h3 { margin: 0; color: var(--ink); font-size: 14px; font-weight: 400; line-height: 1.5; }
+.ec-provider-copy p { margin: 0; color: var(--subtle); font-size: 12px; line-height: 1.5; }
+.ec-actions { display: flex; align-items: center; justify-content: flex-end; gap: 15px; }
+.ec-status { display: inline-flex; align-items: center; gap: 5px; color: var(--subtle); font-size: 12px; white-space: nowrap; }
+.ec-status-linked { color: var(--muted); }
+.ec-open { display: grid; place-items: center; width: 25px; height: 28px; color: var(--subtle); border-radius: 4px; }
+.ec-open:hover { color: var(--ink); background: var(--surface); }
+.ec-open:focus-visible, .ec-error button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.ec-loading { width: 52px; text-align: right; color: var(--subtle); }
+.ec-spinner { animation: ec-spin 1s linear infinite; }
+.ec-footnote { margin: 12px 0 0; color: var(--subtle); font-size: 12px; line-height: 1.6; }
+.ec-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 15px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--ink); font-size: 13px; line-height: 1.5; }
+.ec-error button { flex: none; border: 0; padding: 0; background: none; color: var(--accent); text-decoration: underline; font: inherit; cursor: pointer; }
+@keyframes ec-spin { to { transform: rotate(360deg); } }
+@media (max-width: 600px) { .ec-provider { gap: 8px; padding: 12px 14px; } .ec-provider-copy { display: block; } .ec-provider-copy p { margin-top: 2px; } .ec-actions { gap: 8px; } }
+@media (prefers-reduced-motion: reduce) { .ec-spinner { animation: none; } }

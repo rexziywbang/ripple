@@ -1,0 +1,26 @@
+{
+  "name": "Christmas dinner",
+  "provenance": "fictional_scenario",
+  "facts": {
+    "attendance": 200,
+    "date": "2026-12-11",
+    "time": "18:00",
+    "timezone": "America/New_York",
+    "format": "Seated dinner",
+    "venue": "Garden Hall",
+    "venueAddress": "125 Garden Avenue, Boston, MA (demo)",
+    "venueCapacity": 260,
+    "venueCostCents": 720000,
+    "venueIncludesAV": false,
+    "caterer": "Shah Halal",
+    "cateringPerPersonCents": 2400,
+    "cateringDeliveryCents": 0,
+    "dietary": "Vegetarian and halal options required",
+    "staffCount": 4,
+    "staffCostEachCents": 30000,
+    "equipmentCostCents": 180000,
+    "budgetLimitCents": 1800000,
+    "sunkCostCents": 0,
+    "notes": "Northstar Christmas dinner: arrival, seated meal, team awards and a short presentation."
+  }
+}
