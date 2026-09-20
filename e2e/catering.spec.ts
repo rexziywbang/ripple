@@ -32,9 +32,16 @@ test.describe("Ripple critical journeys", () => {
     await page.getByRole("button", { name: "Switch to light mode" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
     const areas = page.getByRole("navigation", { name: "Planning areas" });
-    for (const a of ["Venue", "Guests", "Catering", "Budget", "Staff", "Equipment", "Brief"]) await expect(areas.getByText(new RegExp(a))).toBeVisible();
+    for (const a of ["Venue", "Guests", "Catering", "Budget", "Staff", "Equipment", "Brief"]) await expect(areas.getByRole("button", { name: new RegExp(`^${a}`) })).toBeVisible();
     await expect(page.getByText("Budget forecast")).toBeVisible();
     await expect(page.getByText("$15,960").first()).toBeVisible();
+    // Menu first: the request box appears only after picking an area, and Back returns to the menu.
+    await expect(page.getByLabel("What changed?")).toHaveCount(0);
+    await areas.getByRole("button", { name: /^Venue/ }).click();
+    await expect(page.getByRole("heading", { name: "Venue and capacity" })).toBeVisible();
+    await expect(page.getByLabel("What changed?")).toBeVisible();
+    await page.getByRole("button", { name: "Back to event" }).click();
+    await expect(areas).toBeVisible();
   });
 
   test("attendance change follows consequences across areas and needs approval before anything changes", async ({ page }) => {
@@ -44,8 +51,9 @@ test.describe("Ripple critical journeys", () => {
     await expect(input).toHaveValue("Reduce attendance to 240.");
     await input.fill("Attendance is now 300.");
     await page.getByRole("button", { name: "Follow the consequences" }).click();
-    await expect(page.getByRole("list", { name: "Progress" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Following the change" })).toBeVisible();
     await expect(page.getByText(/Ready to review/).first()).toBeVisible();
+    await expect(page.getByRole("list", { name: "Progress" })).toBeVisible();
     // Rows are collapsed by default; checks live behind a disclosure.
     await page.getByRole("button", { name: /checks against your sources/ }).click();
     await expect(page.getByText(/300 exceeds this by 40/).first()).toBeVisible();

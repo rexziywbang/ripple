@@ -12,30 +12,41 @@ import { Badge, Button, Card, CostBadge, Empty, SectionTitle, type Tone } from "
 
 const FACT_TONE: Record<ProjectFact["status"], Tone> = { confirmed: "accent", tentative: "warn", unknown: "danger" };
 
-export function AreaTiles({ snap, selected, onSelect }: { snap: ProjectSnapshot; selected: AreaId; onSelect: (a: AreaId) => void }) {
+const HEADLINE: Record<AreaId, string> = {
+  brief: "event.date",
+  venue: "venue.name",
+  guests: "attendance.expected",
+  catering: "catering.vendor",
+  budget: "budget.ceiling_cents",
+  staff: "staffing.required",
+  equipment: "equipment.av_vendor",
+};
+
+/** The event menu: one card per responsibility. Pick one to see its details and describe a change. */
+export function AreaTiles({ snap, onSelect }: { snap: ProjectSnapshot; onSelect: (a: AreaId) => void }) {
   return (
-    <nav aria-label="Planning areas" className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+    <nav aria-label="Planning areas" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {AREAS.map((a) => {
         const facts = snap.facts.filter((f) => a.factKeys.includes(f.key));
         const unknown = facts.filter((f) => f.status === "unknown").length;
         const tentative = facts.filter((f) => f.status === "tentative").length;
         const active = snap.workflows.filter((w) => !["completed", "superseded", "failed"].includes(w.status) && (w.area === a.id || w.proposals.some((p) => p.area === a.id && p.decision === "pending")));
-        const isSel = a.id === selected;
         const dot = active.length ? "bg-info ripple-active" : unknown ? "bg-danger" : tentative ? "bg-warn" : "bg-accent";
-        const hint = active.length ? `${active.length} change${active.length === 1 ? "" : "s"} in progress` : unknown ? `${unknown} unknown` : tentative ? `${tentative} tentative` : "settled";
+        const hint = active.length ? `${active.length} change${active.length === 1 ? "" : "s"} in progress` : unknown ? `${unknown} unknown` : tentative ? `${tentative} tentative` : "Settled";
+        const head = snap.facts.find((f) => f.key === HEADLINE[a.id]);
         return (
           <button
             key={a.id}
             onClick={() => onSelect(a.id)}
-            aria-pressed={isSel}
-            title={hint}
-            className={`flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2 text-left transition-colors ${isSel ? "border-accent bg-accent-soft" : "border-border bg-surface hover:bg-border/30"}`}
+            className="group flex min-w-0 flex-col gap-2 rounded-xl border border-border bg-surface p-4 text-left transition-colors hover:border-accent hover:bg-accent-soft/40"
           >
-            <span aria-hidden className={`size-2 shrink-0 rounded-full ${dot}`} />
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold">{a.short}</span>
-              <span className="block truncate text-[11px] text-muted">{hint}</span>
+            <span className="flex items-center justify-between gap-2">
+              <span className="text-base font-semibold">{a.short}</span>
+              <span aria-hidden className={`size-2 shrink-0 rounded-full ${dot}`} />
             </span>
+            {head && head.status !== "unknown" && <span className="truncate text-sm">{formatFactValue(head.key, head.value)}</span>}
+            <span className="text-xs text-muted">{hint}</span>
+            <span className="mt-auto text-xs text-accent opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">Open &rarr;</span>
           </button>
         );
       })}
@@ -102,7 +113,7 @@ function DocumentViewer({ projectId, docId, onClose }: { projectId: string; docI
   );
 }
 
-export function AreaPanel({ snap, area, refresh, onWorkflowCreated }: { snap: ProjectSnapshot; area: AreaId; refresh: () => Promise<void>; onWorkflowCreated: (id: string) => void }) {
+export function AreaPanel({ snap, area, refresh, onBack, onWorkflowCreated }: { snap: ProjectSnapshot; area: AreaId; refresh: () => Promise<void>; onBack: () => void; onWorkflowCreated: (id: string) => void }) {
   const def = AREA_BY_ID[area];
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -132,7 +143,12 @@ export function AreaPanel({ snap, area, refresh, onWorkflowCreated }: { snap: Pr
 
   return (
     <Card aria-labelledby="area-title" className="min-w-0">
-      <div className="mb-3">
+      <div className="mb-3 flex items-center gap-2">
+        <button type="button" onClick={onBack} aria-label="Back to event" className="inline-flex size-7 items-center justify-center rounded-md border border-border text-muted hover:text-foreground">
+          <svg aria-hidden viewBox="0 0 16 16" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M10 3L5 8l5 5" />
+          </svg>
+        </button>
         <h2 id="area-title" className="text-lg font-semibold">
           {def.title}
         </h2>

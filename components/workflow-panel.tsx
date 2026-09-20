@@ -1,22 +1,15 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import type { ProjectSnapshot, WorkflowView } from "@/lib/api/snapshot";
-import type { EvidenceRef, Proposal, Task, WorkflowStage } from "@/lib/db/schema";
+import type { EvidenceRef, Proposal, Task } from "@/lib/db/schema";
 import { AREAS, AREA_BY_ID, type AreaId } from "@/lib/domain/areas";
 import { formatFactValue, humanFactKey } from "@/lib/domain/facts";
 import { formatCents, formatDelta } from "@/lib/domain/money";
 import { api } from "./api";
+import { FollowingPath, isFresh, pathSteps } from "./following-path";
 import { InviteCard } from "./invite-card";
-import { Badge, Button, Card, CostBadge, Empty, Spinner, formatTime, type Tone } from "./ui";
-
-const PATH: { stage: WorkflowStage; title: string }[] = [
-  { stage: "understand", title: "Understand" },
-  { stage: "check_sources", title: "Check sources" },
-  { stage: "follow_consequences", title: "Follow consequences" },
-  { stage: "prepare_updates", title: "Prepare updates" },
-  { stage: "review", title: "Ready to review" },
-];
+import { Badge, Button, Card, CostBadge, Empty, formatTime, type Tone } from "./ui";
 
 const STATUS_TONE: Record<string, Tone> = {
   planning: "info",
@@ -80,15 +73,6 @@ export function WorkflowPanel({ snap, workflow, refresh, onSelectWorkflow }: { s
   );
 }
 
-function stageState(wf: WorkflowView, stage: WorkflowStage): "done" | "active" | "todo" | "failed" {
-  const t = wf.tasks.find((x) => x.kind === "stage" && x.stage === stage);
-  if (!t) return "todo";
-  if (t.status === "succeeded") return "done";
-  if (t.status === "failed") return "failed";
-  if (t.status === "running") return "active";
-  return "todo";
-}
-
 function Chevron() {
   return (
     <svg aria-hidden className="chevron size-3.5 shrink-0 text-muted" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -100,12 +84,7 @@ function Chevron() {
 function ProgressPath({ wf }: { wf: WorkflowView }) {
   const [open, setOpen] = useState(false);
   const past = ["executing", "waiting_external", "partially_complete", "completed"].includes(wf.status);
-  const states = PATH.map((p) => {
-    const st = stageState(wf, p.stage);
-    const done = st === "done" || (past && p.stage === "review");
-    const active = st === "active" || (wf.status === "ready_for_review" && p.stage === "review") || (wf.status === "needs_input" && p.stage === "understand");
-    return { ...p, done, active, failed: st === "failed", task: wf.tasks.find((x) => x.kind === "stage" && x.stage === p.stage) };
-  });
+  const states = pathSteps(wf);
   const current = states.find((s) => s.active) ?? states.find((s) => s.failed) ?? (past ? states[states.length - 1] : states.find((s) => !s.done));
   return (
     <div>
@@ -360,6 +339,8 @@ function WorkflowDetail({ snap, wf, refresh }: { snap: ProjectSnapshot; wf: Work
   const [err, setErr] = useState<string | null>(null);
   const [showChecks, setShowChecks] = useState(false);
   const [showMeta, setShowMeta] = useState(false);
+  const [walking, setWalking] = useState(() => isFresh(wf));
+  const settle = useCallback(() => setWalking(false), []);
   const pending = useMemo(() => wf.proposals.filter((p) => p.decision === "pending"), [wf.proposals]);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const included = useMemo(() => new Set(pending.filter((p) => !excluded.has(p.id)).map((p) => p.id)), [pending, excluded]);
@@ -399,7 +380,7 @@ function WorkflowDetail({ snap, wf, refresh }: { snap: ProjectSnapshot; wf: Work
     <div className="space-y-3">
       <div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={STATUS_TONE[wf.status]}>{STATUS_LABEL[wf.status]}</Badge>
+          <Badge tone={walking ? STATUS_TONE.planning : STATUS_TONE[wf.status]}>{walking ? STATUS_LABEL.planning : STATUS_LABEL[wf.status]}</Badge>
           <p className="min-w-0 flex-1 truncate text-sm" title={wf.request}>
             “{wf.request}”
           </p>
@@ -426,9 +407,11 @@ function WorkflowDetail({ snap, wf, refresh }: { snap: ProjectSnapshot; wf: Work
         )}
       </div>
 
-      <ProgressPath wf={wf} />
-
-      {wf.status === "planning" && <Spinner label="Ripple is working through the consequences…" />}
+      {walking || wf.status === "planning" ? (
+        <FollowingPath wf={wf} onSettled={settle} />
+      ) : (
+        <>
+          <ProgressPath wf={wf} />
 
       {wf.status === "needs_input" && wf.clarification && (
         <div className="space-y-3 rounded-lg border border-warn/40 bg-warn-soft/40 p-3">
@@ -512,6 +495,8 @@ function WorkflowDetail({ snap, wf, refresh }: { snap: ProjectSnapshot; wf: Work
         <p role="alert" className="text-sm text-danger">
           {err}
         </p>
+      )}
+        </>
       )}
     </div>
   );

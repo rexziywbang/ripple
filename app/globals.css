@@ -115,8 +115,134 @@ details[open] > summary .chevron {
   animation: ripple-pulse 1.6s ease-in-out infinite;
 }
 
+.path {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.path-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  text-align: center;
+}
+
+.path-step::before {
+  content: "";
+  position: absolute;
+  top: 0.875rem;
+  left: -50%;
+  width: 100%;
+  height: 2px;
+  background: var(--border);
+  z-index: 0;
+}
+
+.path-step:first-child::before {
+  display: none;
+}
+
+.path-step::after {
+  content: "";
+  position: absolute;
+  top: 0.875rem;
+  left: -50%;
+  width: 0;
+  height: 2px;
+  background: var(--accent);
+  z-index: 0;
+  transition: width 500ms ease;
+}
+
+.path-step[data-state="done"]::after,
+.path-step[data-state="active"]::after,
+.path-step[data-state="failed"]::after {
+  width: 100%;
+}
+
+.path-step:first-child::after {
+  display: none;
+}
+
+.path-node {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 9999px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  transition:
+    background-color 300ms ease,
+    border-color 300ms ease,
+    color 300ms ease,
+    transform 300ms ease;
+}
+
+.path-step[data-state="active"] .path-node {
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: scale(1.1);
+  animation: path-ring 1.4s ease-out infinite;
+}
+
+.path-step[data-state="done"] .path-node {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  animation: path-pop 350ms ease-out;
+}
+
+.path-step[data-state="failed"] .path-node {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
+
+.path-label {
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  color: var(--muted);
+}
+
+.path-step[data-state="active"] .path-label,
+.path-step[data-state="done"] .path-label {
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+@keyframes path-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+
+@keyframes path-pop {
+  0% {
+    transform: scale(0.8);
+  }
+  60% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .ripple-active {
+  .ripple-active,
+  .path-node {
     animation: none;
   }
   * {

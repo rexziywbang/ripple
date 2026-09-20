@@ -18,7 +18,7 @@ export function Workspace({ projectId }: { projectId: string }) {
   const pathname = usePathname();
   const params = useSearchParams();
   const areaParam = params.get("area");
-  const area: AreaId = areaParam && areaParam in AREA_BY_ID ? (areaParam as AreaId) : "brief";
+  const area: AreaId | null = areaParam && areaParam in AREA_BY_ID ? (areaParam as AreaId) : null;
   const wfParam = params.get("wf");
 
   const setParams = useCallback(
@@ -62,8 +62,11 @@ export function Workspace({ projectId }: { projectId: string }) {
       <main className="mx-auto grid w-full max-w-[1500px] flex-1 gap-4 px-4 py-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
         <div className="flex min-w-0 flex-col gap-4">
           <Dashboard snap={snap} onSelectWorkflow={(id) => setParams({ wf: id })} />
-          <AreaTiles snap={snap} selected={area} onSelect={(a) => setParams({ area: a })} />
-          <AreaPanel snap={snap} area={area} refresh={refresh} onWorkflowCreated={(id) => setParams({ wf: id })} />
+          {area ? (
+            <AreaPanel snap={snap} area={area} refresh={refresh} onBack={() => setParams({ area: null })} onWorkflowCreated={(id) => setParams({ wf: id })} />
+          ) : (
+            <AreaTiles snap={snap} onSelect={(a) => setParams({ area: a })} />
+          )}
         </div>
         <div className="flex min-w-0 flex-col gap-4">
           <WorkflowPanel snap={snap} workflow={selectedWorkflow} refresh={refresh} onSelectWorkflow={(id) => setParams({ wf: id })} />
