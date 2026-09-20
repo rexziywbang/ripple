@@ -18,10 +18,19 @@ test.describe("Ripple critical journeys", () => {
     await page.getByRole("link", { name: "Explore sample event" }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${SAMPLE}`));
     await expect(page.getByText("Northwind Christmas Dinner").first()).toBeVisible();
-    const status = page.getByLabel("Integration status");
+    await page.getByRole("button", { name: "Integration status" }).click();
+    const status = page.getByLabel("Integration status").last();
     await expect(status.getByText(/Dropbox/)).toBeVisible();
     await expect(status.getByText(/Gmail/)).toBeVisible();
     await expect(status.getByText(/Invitations/)).toBeVisible();
+    await expect(status.getByText(/Worker/)).toBeVisible();
+    // Dark mode is an explicit, persisted choice.
+    await page.getByRole("button", { name: "Switch to dark mode" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await page.getByRole("button", { name: "Switch to light mode" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
     const areas = page.getByRole("navigation", { name: "Planning areas" });
     for (const a of ["Venue", "Guests", "Catering", "Budget", "Staff", "Equipment", "Brief"]) await expect(areas.getByText(new RegExp(a))).toBeVisible();
     await expect(page.getByText("Budget forecast")).toBeVisible();

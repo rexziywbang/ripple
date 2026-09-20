@@ -31,6 +31,7 @@ export function budgetSummary(snap: ProjectSnapshot) {
 }
 
 const OPEN = ["completed", "failed", "superseded"];
+const NOTABLE = new Set(["sunk", "released", "prospective", "unknown"]);
 
 /** One compact strip: the numbers that matter, plus anything that needs the organizer. */
 export function Dashboard({ snap, onSelectWorkflow }: { snap: ProjectSnapshot; onSelectWorkflow: (id: string) => void }) {
@@ -62,17 +63,34 @@ export function Dashboard({ snap, onSelectWorkflow }: { snap: ProjectSnapshot; o
             {formatCents(b.total)}
             {b.ceiling !== undefined && <span className="text-sm font-normal text-muted"> / {formatCents(b.ceiling)}</span>}
           </dd>
-          <dd className={`truncate text-xs ${variance !== null && variance < 0 ? "text-danger" : "text-muted"}`} title={Object.entries(b.byStatus).map(([st, amt]) => `${COST_LABEL[st] ?? st} ${formatCents(amt)}`).join(" · ")}>
+          <dd className={`text-xs ${variance !== null && variance < 0 ? "text-danger" : "text-muted"}`} title={Object.entries(b.byStatus).map(([st, amt]) => `${COST_LABEL[st] ?? st} ${formatCents(amt)}`).join(" · ")}>
             {variance === null ? "No ceiling set" : variance < 0 ? `Over ceiling by ${formatCents(-variance)}` : `${formatCents(variance)} headroom`}
             {b.unknown ? ` · ${b.unknown} unknown` : ""}
             {b.prospective ? ` · ${formatCents(Math.abs(b.prospective))} prospective saving pending confirmation` : ""}
           </dd>
-          <dd className="mt-1 flex flex-wrap gap-1">
-            {Object.entries(b.byStatus).map(([st, amt]) => (
-              <Badge key={st} tone={costTone(st)}>
-                {COST_LABEL[st] ?? st} {formatCents(amt)}
-              </Badge>
-            ))}
+          <dd className="mt-1 flex flex-wrap items-center gap-1">
+            {Object.entries(b.byStatus)
+              .filter(([st]) => NOTABLE.has(st))
+              .map(([st, amt]) => (
+                <Badge key={st} tone={costTone(st)}>
+                  {COST_LABEL[st] ?? st} {formatCents(amt)}
+                </Badge>
+              ))}
+            <details className="group text-xs">
+              <summary className="cursor-pointer list-none text-muted hover:text-foreground">
+                <span className="group-open:hidden">Breakdown</span>
+                <span className="hidden group-open:inline">Hide breakdown</span>
+              </summary>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {Object.entries(b.byStatus)
+                  .filter(([st]) => !NOTABLE.has(st))
+                  .map(([st, amt]) => (
+                    <Badge key={st} tone={costTone(st)}>
+                      {COST_LABEL[st] ?? st} {formatCents(amt)}
+                    </Badge>
+                  ))}
+              </div>
+            </details>
           </dd>
         </div>
       </dl>

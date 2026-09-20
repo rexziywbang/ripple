@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { ProjectSnapshot } from "@/lib/api/snapshot";
 import type { Connection } from "@/lib/db/schema";
 import { api } from "./api";
+import { ThemeToggle } from "./theme-toggle";
 import { Badge, Button, relativeTime, type Tone } from "./ui";
 
 const PROVIDER_LABEL: Record<Connection["provider"], string> = { dropbox: "Dropbox", gmail: "Gmail", invitations: "Invitations" };
@@ -16,11 +17,11 @@ function connectionTone(c: Connection): Tone {
   return "neutral";
 }
 
-export function ConnectionPill({ c }: { c: Connection }) {
+export function ConnectionPill({ c, withName = true }: { c: Connection; withName?: boolean }) {
   const label = c.status === "connected" ? (c.mode === "live" ? "live" : "demo") : c.status;
   return (
     <Badge tone={connectionTone(c)} title={c.status === "connected" ? (c.mode === "live" ? "Live provider credentials configured" : "Simulated: nothing leaves this machine") : "Disconnected: related actions produce manual instructions"}>
-      {PROVIDER_LABEL[c.provider]} · {label}
+      {withName ? `${PROVIDER_LABEL[c.provider]} · ${label}` : label}
     </Badge>
   );
 }
@@ -29,6 +30,7 @@ export function ProjectHeader({ snap, offline, refresh }: { snap: ProjectSnapsho
   const router = useRouter();
   const [renaming, setRenaming] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
   const [name, setName] = useState(snap.project.name);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -58,6 +60,19 @@ export function ProjectHeader({ snap, offline, refresh }: { snap: ProjectSnapsho
       setBusy(false);
     }
   }
+
+  const demoCount = snap.connections.filter((c) => c.status === "connected" && c.mode === "demo").length;
+  const broken = snap.connections.filter((c) => c.status !== "connected").length;
+  const statusTone: Tone = offline ? "danger" : !snap.worker.online ? "warn" : broken ? "warn" : demoCount ? "info" : "accent";
+  const statusLabel = offline
+    ? "Server unreachable"
+    : !snap.worker.online
+      ? "Worker offline"
+      : broken
+        ? `${broken} disconnected`
+        : demoCount === snap.connections.length
+          ? "Demo mode"
+          : "Connected";
 
   return (
     <header className="border-b border-border bg-surface">
@@ -93,14 +108,35 @@ export function ProjectHeader({ snap, offline, refresh }: { snap: ProjectSnapsho
           {p.status === "closed" && <Badge tone="neutral">closed</Badge>}
           {p.isSample && <Badge tone="info">sample</Badge>}
         </div>
-        <div className="flex flex-wrap items-center gap-2" aria-label="Integration status">
-          {snap.connections.map((c) => (
-            <ConnectionPill key={c.id} c={c} />
-          ))}
-          <Badge tone={offline ? "danger" : snap.worker.online ? "accent" : "warn"} title={snap.worker.online ? `Worker heartbeat ${relativeTime(snap.worker.lastSeen, snap.serverTime)}; ${snap.worker.queued} job(s) queued` : "No worker heartbeat in the last 15s. Start it with `npm run worker`; queued jobs will run when it appears."}>
-            {offline ? "Server unreachable" : snap.worker.online ? `Worker online${snap.worker.queued ? ` · ${snap.worker.queued} queued` : ""}` : `Worker offline${snap.worker.queued ? ` · ${snap.worker.queued} queued` : ""}`}
-          </Badge>
+        <div className="relative">
+          <button
+            type="button"
+            aria-label="Integration status"
+            aria-expanded={statusOpen}
+            onClick={() => setStatusOpen((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs text-muted hover:text-foreground"
+          >
+            <span aria-hidden className={`size-2 rounded-full ${statusTone === "danger" ? "bg-danger" : statusTone === "warn" ? "bg-warn" : statusTone === "info" ? "bg-info" : "bg-accent"}`} />
+            {statusLabel}
+          </button>
+          {statusOpen && (
+            <div aria-label="Integration status" className="absolute right-0 z-20 mt-1 flex w-64 flex-col gap-2 rounded-lg border border-border bg-surface p-3 text-sm shadow-lg" onMouseLeave={() => setStatusOpen(false)}>
+              {snap.connections.map((c) => (
+                <div key={c.id} className="flex items-center justify-between gap-2">
+                  <span>{PROVIDER_LABEL[c.provider]}</span>
+                  <ConnectionPill c={c} withName={false} />
+                </div>
+              ))}
+              <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
+                <span>Worker</span>
+                <Badge tone={offline ? "danger" : snap.worker.online ? "accent" : "warn"} title={snap.worker.online ? `Heartbeat ${relativeTime(snap.worker.lastSeen, snap.serverTime)}` : "No heartbeat in the last 15s. Start it with `npm run worker`."}>
+                  {offline ? "unreachable" : snap.worker.online ? `online${snap.worker.queued ? ` · ${snap.worker.queued} queued` : ""}` : "offline"}
+                </Badge>
+              </div>
+            </div>
+          )}
         </div>
+        <ThemeToggle />
         <div className="relative">
           <Button variant="ghost" aria-label="Project actions" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((v) => !v)} disabled={busy}>
             ⋯

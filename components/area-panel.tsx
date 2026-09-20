@@ -107,6 +107,7 @@ export function AreaPanel({ snap, area, refresh, onWorkflowCreated }: { snap: Pr
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [showSources, setShowSources] = useState(false);
   const [openDoc, setOpenDoc] = useState<string | null>(null);
   const facts = def.factKeys.map((k) => snap.facts.find((f) => f.key === k)).filter((f): f is ProjectFact => !!f);
   const docs = snap.documents.filter((d) => def.folder && d.path.includes(`/${def.folder}/`));
@@ -157,7 +158,7 @@ export function AreaPanel({ snap, area, refresh, onWorkflowCreated }: { snap: Pr
           <Button type="submit" variant="primary" disabled={busy || closed || !text.trim()}>
             {busy ? "Capturing…" : "Follow the consequences"}
           </Button>
-          <span className="text-xs text-muted">Ripple keeps working in the background; nothing is applied or sent until you review it.</span>
+          <span className="text-xs text-muted">Nothing is applied or sent until you review it.</span>
         </div>
         <div className="flex flex-wrap gap-1.5" aria-label="Example prompts">
           {def.examples.map((ex) => (
@@ -175,7 +176,14 @@ export function AreaPanel({ snap, area, refresh, onWorkflowCreated }: { snap: Pr
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="min-w-0">
-          <SectionTitle>Current plan</SectionTitle>
+          <div className="flex items-baseline justify-between gap-2">
+            <SectionTitle>Current plan</SectionTitle>
+            {facts.some((f) => f.sourceRefs.length) && (
+              <button type="button" aria-pressed={showSources} onClick={() => setShowSources((v) => !v)} className="text-xs text-muted hover:underline">
+                {showSources ? "Hide sources" : "Sources"}
+              </button>
+            )}
+          </div>
           {facts.length === 0 ? (
             <Empty>No facts recorded for this area yet.</Empty>
           ) : (
@@ -189,7 +197,7 @@ export function AreaPanel({ snap, area, refresh, onWorkflowCreated }: { snap: Pr
                   <dd className="break-words font-medium" title={`Version ${f.version}`}>
                     {formatFactValue(f.key, f.value)}
                   </dd>
-                  <SourceLinks refs={f.sourceRefs} snap={snap} onOpen={setOpenDoc} />
+                  {showSources && <SourceLinks refs={f.sourceRefs} snap={snap} onOpen={setOpenDoc} />}
                 </div>
               ))}
             </dl>

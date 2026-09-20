@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { Project } from "@/lib/db/schema";
 import { parseDollarsToCents } from "@/lib/domain/money";
 import { api } from "./api";
+import { ThemeToggle } from "./theme-toggle";
 import { Badge, Button, Card, Empty, SectionTitle, Spinner } from "./ui";
 
 export function ProjectList() {
@@ -83,7 +84,10 @@ export function ProjectList() {
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10">
       <header className="mb-10">
-        <p className="text-sm font-medium text-accent">Ripple</p>
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium text-accent">Ripple</p>
+          <ThemeToggle />
+        </div>
         <h1 className="mt-1 text-3xl font-semibold tracking-tight">Event planning that remembers consequences</h1>
         <p className="mt-2 max-w-2xl text-muted">
           Tell Ripple what changed — attendance, venue, caterer, budget, staff, timing — and it follows the change through every planning area, shows its evidence, and waits for your approval before anything leaves the building.
