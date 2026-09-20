@@ -53,6 +53,9 @@
 .ew-updated-files details>div{padding:14px;border:1px solid var(--border);border-radius:9px;margin-top:7px;background:#fff}
 .ew-updated-files details small{color:#a696ac;display:block;overflow-wrap:anywhere;margin-bottom:10px;font-size:10px}
 .ew-updated-files pre{font-size:12px;line-height:1.75;color:#807085;max-height:220px;overflow:auto;margin:0}
+.ew-complete > .change-ripple,
+.ew-slide-review > .change-ripple,
+.ew-review-empty > .change-ripple{margin-bottom:20px}
 .ew-review-empty{padding:20px 0}
 .ew-review-empty .ew-complete-mark{margin-bottom:20px}
 .ew-review-empty h2{font-size:26px}

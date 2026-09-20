@@ -268,8 +268,8 @@ export function createService(options:{dbPath:string;planner:Planner;aiStatus:()
     const patch=cause?.after;
     const title=patch?.attendance!==undefined?`Guest count changed to ${patch.attendance}`:patch?.caterer?`Catering changed to ${patch.caterer}`:patch?.venue?`Venue changed to ${patch.venue}`:patch?.budgetLimitCents!==undefined?`Budget changed to ${money(patch.budgetLimitCents)}`:patch?.date?`Event date changed to ${patch.date}`:cause?.title??(related.has(s.meta[p.id]?.changeId??'')?trigger?.note:undefined)??'Event updates';
     const meta=s.meta[p.id];const delivery=p.kind==='email'?(meta?.delivery??(meta?.deliveryMode===undefined&&p.status==='pending'?routing:undefined)):undefined;
-    return {...p,...(p.kind==='plan'?{planCards:planCards(p)}:{}),...(delivery?{recipient:delivery.recipient,originalRecipient:meta?.delivery?.originalRecipient??p.recipient,description:'Prepared for Gmail delivery through the local browser. Approval sends only to the displayed test recipient.'}:{}),...(p.status==='pending'&&p.kind==='email'?{draftToken:draftToken(s,p)}:{}),...(p.status==='pending'&&approvalToken(s,p)?{approvalToken:approvalToken(s,p)}:{}),groupId:p.groupId??cause?.id??`event:${s.state.project.id}`,groupTitle:p.groupTitle??title};
-  }),connections:s.state.connections.map(connection=>connection.name==='Email'&&visibleRouting?{...connection,mode:'live' as const,detail:routing?`Gmail through the local browser: ${routing.account}. All email is routed to ${routing.recipient}.`:'Email routing is disconnected. Previously approved browser jobs are still visible until reconciled.'}:connection),...(visibleRouting?{emailDelivery:{...visibleRouting,mode:'local_browser' as const,pendingCount:pendingJobs.length,configured:!!routing}}:{}),cateringQuote:quoteSummary(s),projects:store.list(),budget:budget(s),ai:options.aiStatus()});
+    return {...p,...(p.kind==='plan'?{planCards:planCards(p)}:{}),...(delivery?{recipient:delivery.recipient,originalRecipient:meta?.delivery?.originalRecipient??p.recipient,description:'Prepared for Gmail. Approval sends only to the displayed test recipient.'}:{}),...(p.status==='pending'&&p.kind==='email'?{draftToken:draftToken(s,p)}:{}),...(p.status==='pending'&&approvalToken(s,p)?{approvalToken:approvalToken(s,p)}:{}),groupId:p.groupId??cause?.id??`event:${s.state.project.id}`,groupTitle:p.groupTitle??title};
+  }),connections:s.state.connections.map(connection=>connection.name==='Email'&&visibleRouting?{...connection,mode:'live' as const,detail:routing?`Gmail: ${routing.account}. All email is routed to ${routing.recipient}.`:'Email routing is disconnected. Previously approved messages remain visible until their status is checked.'}:connection),...(visibleRouting?{emailDelivery:{...visibleRouting,mode:'local_browser' as const,pendingCount:pendingJobs.length,configured:!!routing}}:{}),cateringQuote:quoteSummary(s),projects:store.list(),budget:budget(s),ai:options.aiStatus()});
   };
   const activity=(s:Internal,title:string,detail:string,status:Activity['status']='complete',changeId?:string,automatic=false)=>s.state.activity.unshift({id:id(),at:now(),title,detail,status,...(changeId?{changeId,canUndo:true}:{}),...(automatic?{automatic:true}:{})});
   function invalidate(s:Internal,keys:Key[],applyingStaffingId?:string,preserveQuoteDietary=false){
@@ -520,7 +520,7 @@ export function createService(options:{dbPath:string;planner:Planner;aiStatus:()
     const awaitingBrowser=pending.filter(p=>p.status==='approved'&&s.meta[p.id]?.deliveryMode==='local_browser');
     if(awaitingBrowser.length){
       s.state.workflow.status=pending.some(p=>p.status==='pending')?'review':'waiting';
-      s.state.workflow.summary=`Waiting for the local browser to deliver ${awaitingBrowser.length} approved email${awaitingBrowser.length===1?'':'s'}.`;
+      s.state.workflow.summary=`${awaitingBrowser.length} email${awaitingBrowser.length===1?'':'s'} approved · waiting to send.`;
       s.state.workflow.stages=s.state.workflow.stages.filter(stage=>stage.status!=='waiting');
       for(const stage of s.state.workflow.stages)stage.status='done';
       s.state.workflow.stages.push({label:'Verify Gmail delivery',status:'waiting'});return;
@@ -639,7 +639,7 @@ export function createService(options:{dbPath:string;planner:Planner;aiStatus:()
         // accidentally cancel browser work in the separate bridge database.
         options.bridge.cancel(job.id);
         if(meta)meta.bridgeReconciled='cancelled';
-        activity(existing,'Queued email canceled','The event changed before the browser started sending. No email was delivered.');save(existing);continue;
+        activity(existing,'Queued email canceled','The event changed before sending started. No email was sent.');save(existing);continue;
       }
       if(job.status==='queued'&&modeFor(job.projectId)==='rehearsal'&&p&&meta&&p.status==='approved'){
         // Switch only work that no browser has claimed. Live history is retained,
@@ -648,7 +648,7 @@ export function createService(options:{dbPath:string;planner:Planner;aiStatus:()
         execute(existing,p);refreshWorkflow(existing);save(existing);continue;
       }
       if(job.status==='running'&&invalid){
-        if(meta&&!meta.runningNotice){meta.runningNotice=true;activity(existing,'An email send is already in progress','The browser has claimed this email. Its delivery must be checked before a correction can be prepared.','attention');save(existing);}continue;
+        if(meta&&!meta.runningNotice){meta.runningNotice=true;activity(existing,'An email send is already in progress','Sending has started. Check its outcome before preparing a correction.','attention');save(existing);}continue;
       }
       if(!['completed','failed','cancelled'].includes(job.status)||meta?.bridgeReconciled===job.status)continue;
       if(job.status==='cancelled'){if(meta){meta.bridgeReconciled='cancelled';if(p?.status==='approved')p.status='withdrawn';save(existing);}continue;}
@@ -656,20 +656,20 @@ export function createService(options:{dbPath:string;planner:Planner;aiStatus:()
         const s=load(job.projectId);const current=s.state.proposals.find(candidate=>candidate.id===proposalId);const currentMeta=current?s.meta[current.id]:undefined;
         if(job.status==='failed'){
           if(currentMeta)currentMeta.bridgeReconciled='failed';if(current&&current.status==='approved')current.status='blocked';
-          const detail=(job.error??'The browser could not verify delivery.').replace(/sk-[A-Za-z0-9_-]+/g,'[redacted]').slice(0,500);
-          if(!s.state.receipts.some(receipt=>receipt.proposalId===proposalId&&receipt.status==='failed'))s.state.receipts.unshift({id:id(),at:now(),title:current?.title??'Email delivery',provider:'Gmail browser',status:'failed',detail,proposalId});
+          const detail=(job.error??'The email sender could not confirm sending.').replace(/sk-[A-Za-z0-9_-]+/g,'[redacted]').slice(0,500);
+          if(!s.state.receipts.some(receipt=>receipt.proposalId===proposalId&&receipt.status==='failed'))s.state.receipts.unshift({id:id(),at:now(),title:current?.title??'Email delivery',provider:job.workerId==='ripple-gmail-api'?'Gmail API':'Gmail browser',status:'failed',detail,proposalId});
           activity(s,'Email delivery needs attention',detail,'attention');refreshWorkflow(s);save(s);return;
         }
         if(s.state.receipts.some(receipt=>receipt.proposalId===proposalId&&receipt.status==='delivered')){if(currentMeta)currentMeta.bridgeReconciled='completed';save(s);return;}
         const delivery=currentMeta?.delivery??deliveryFromJob(job);
-        s.state.receipts.unshift({id:id(),at:job.receipt?.completedAt??now(),title:current?.title??delivery.subject,provider:'Gmail browser',status:'delivered',detail:job.receipt?.detail??'The browser verified delivery.',proposalId,...(job.receipt?.url?{url:job.receipt.url}:{}),...(job.receipt?.externalId?{externalId:job.receipt.externalId}:{})});
+        s.state.receipts.unshift({id:id(),at:job.receipt?.completedAt??now(),title:current?.title??delivery.subject,provider:job.workerId==='ripple-gmail-api'?'Gmail API':'Gmail browser',status:'delivered',detail:job.receipt?.detail??'Gmail confirmed sending.',proposalId,...(job.receipt?.url?{url:job.receipt.url}:{}),...(job.receipt?.externalId?{externalId:job.receipt.externalId}:{})});
         s.state.messages.unshift({id:id(),at:job.receipt?.completedAt??now(),from:delivery.recipient,subject:delivery.subject,body:delivery.body,direction:'outbound',simulated:false,...(job.receipt?.url?{url:job.receipt.url}:{})});
         if(currentMeta)currentMeta.bridgeReconciled='completed';
         if(current){current.status='applied';if(!invalid)applyEmailEffect(s,current,true);}
         if(invalid){
-          activity(s,'Email delivered after the plan changed','The delivery is recorded. Review a correction before sending anything else.','attention');
+          activity(s,'Email sent after the plan changed','The send is recorded. Review a correction before sending anything else.','attention');
           if(current)email(s,`Correct the previous update: ${current.title}`,delivery.originalRecipient??delivery.recipient,`Please disregard the previous update. Current event details: ${s.state.project.facts.date} at ${s.state.project.facts.time}, ${s.state.project.facts.venue}, ${s.state.project.facts.attendance} guests. Please confirm the revised arrangements.`,current.area,currentMeta?.keys??[],'communicate');
-        }else activity(s,current?.title??'Email delivered',`Delivery to ${delivery.recipient} was verified in Gmail.`);
+        }else activity(s,current?.title??'Email sent',`Gmail confirmed sending to ${delivery.recipient}.`);
         refreshWorkflow(s);save(s);
       });
     }

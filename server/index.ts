@@ -14,6 +14,8 @@ import {buildDropboxContent} from './dropbox-sync.js';
 import {syncDropboxWorkspace,stageDropboxWorkspace} from './dropbox-staging.js';
 import {syncInvitations} from './invitation-sync.js';
 import {createMailExtensionRouter} from './mail-extension.js';
+import {createGmailApi} from './gmail-api.js';
+import {gmailSetupPage} from './gmail-setup.js';
 import {createContactSync} from './contact-sync.js';
 import {createRehearsalMail} from './rehearsal-mail.js';
 import {createPlaceResearch} from './place-research.js';
@@ -30,13 +32,15 @@ const bridge=createLiveBridge({dbPath:path.join(dataDir,'live-bridge.sqlite')});
 const partiful=createPartifulAdapter();
 const mailMode=process.env.RIPPLE_MAIL_MODE==='live'?'live':'rehearsal';
 const service=createService({dbPath:path.join(dataDir,'ripple.sqlite'),planner:planner.plan,aiStatus:planner.status,planningDelayMs:1200,bridge,mailMode});
+const gmail=createGmailApi({dataDir,bridge,getState:service.getState,reconcile:service.reconcileBridge});
 const contacts=createContactSync({requests:service.contactRequests,apply:service.applyContactResearch});
 const placeResearch=createPlaceResearch({dbPath:path.join(dataDir,'ai.sqlite'),cachePath:path.join(dataDir,'place-research.json')});
 const rehearsalMail=createRehearsalMail({dataDir,getProjectIds:()=>service.getState().projects.map(p=>p.id),getState:service.getState,inject:service.inject,canInject:service.canInjectRehearsalReply});
 void warmVenueIndex().catch(error=>console.warn('Local venue index warming failed:',error instanceof Error?error.message:'unavailable'));
 const app=express();
 app.disable('x-powered-by');
-app.use('/api/mail-worker',createMailExtensionRouter({bridge,dataDir,getState:service.getState,reconcile:service.reconcileBridge,ingestReply:service.ingestReply}));
+app.use('/api/gmail',gmail.router);
+app.use('/api/mail-worker',createMailExtensionRouter({bridge,dataDir,getState:service.getState,reconcile:service.reconcileBridge,ingestReply:service.ingestReply,sendingEnabled:false}));
 app.use((req,res,next)=>{
   if(!['127.0.0.1','localhost','::1'].includes(req.hostname))return res.status(403).json({error:'Local demo access only.'});
   if(!['GET','HEAD','OPTIONS'].includes(req.method)){
@@ -48,6 +52,7 @@ app.use((req,res,next)=>{
 app.use('/api/projects/:id/dropbox-materials',express.json({limit:'600kb'}));
 app.use('/api/workspace/import',express.json({limit:'600kb'}));
 app.use(express.json({limit:'32kb'}));
+app.get('/api/gmail/setup',(_req,res)=>res.setHeader('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'").type('html').send(gmailSetupPage()));
 const nonnegative=z.number().int().min(0).max(1_000_000_000);
 const patch=z.object({
  attendance:z.number().int().min(1).max(100000),date:z.string().max(10),time:z.string().max(20),timezone:z.string().max(80),format:z.string().max(100),
@@ -76,8 +81,8 @@ const workspaceConnections=()=>{
  const fields=['emailAccount','dropboxFolderUrl','calendarEventUrl','eviteEventUrl','partifulEventUrl'] as const;
  const config=configs.sort((a,b)=>fields.filter(field=>b[field]).length-fields.filter(field=>a[field]).length)[0];
  if(!config)return {};
- const {emailAccount,testRecipient,dropboxFolderUrl,calendarEventUrl,eviteEventUrl,partifulEventUrl}=config;
- return {emailAccount,testRecipient,dropboxFolderUrl,calendarEventUrl,eviteEventUrl,partifulEventUrl};
+ const {emailAccount,testRecipient,emailDelivery,dropboxFolderUrl,calendarEventUrl,eviteEventUrl,partifulEventUrl}=config;
+ return {emailAccount,testRecipient,emailDelivery,dropboxFolderUrl,calendarEventUrl,eviteEventUrl,partifulEventUrl};
 };
 app.get('/api/workspace',(_req,res)=>res.json({projects:service.getState().projects,connections:workspaceConnections()}));
 app.post('/api/workspace/import',(req,res)=>{
@@ -124,7 +129,12 @@ app.post('/api/bridge/jobs/:id/fail',(req,res)=>{
  const {error}=z.object({error:z.string().trim().min(1).max(2000)}).strict().parse(req.body);
  const job=bridge.fail(req.params.id,error);service.reconcileBridge();res.json(job);
 });
-app.post('/api/projects',(req,res)=>res.status(201).json(service.createProject(z.object({name:z.string().trim().min(1).max(160)}).parse(req.body).name)));
+app.post('/api/projects',(req,res)=>{
+ const connections=workspaceConnections();
+ const created=service.createProject(z.object({name:z.string().trim().min(1).max(160)}).parse(req.body).name);
+ bridge.configure(created.project.id,connections);
+ res.status(201).json(service.getState(created.project.id));
+});
 app.post('/api/projects/:id/archive',(req,res)=>{
  const {archived}=z.object({archived:z.boolean().default(true)}).strict().parse(req.body??{});
  res.json(service.archiveProject(req.params.id,archived));
@@ -181,7 +191,7 @@ app.use((err:unknown,_req:express.Request,res:express.Response,_next:express.Nex
 const server=app.listen(port,'127.0.0.1',()=>console.log(`Ripple API ready at http://127.0.0.1:${port}`));
 function syncProjectIntegrations(projectId:string){const state=service.getState(projectId);syncCalendar(state,bridge);syncDropboxWorkspace(state,bridge,dropboxOptions(state));syncInvitations(state,bridge);void contacts.sync(projectId);}
 function syncActiveIntegrations(){for(const project of service.getState().projects)syncProjectIntegrations(project.id);}
-const timer=setInterval(()=>{service.tick().then(()=>{if(mailMode==='rehearsal')rehearsalMail.tick();syncActiveIntegrations();}).catch(()=>console.error('A background job failed; review the workspace activity.'));},400);
+const timer=setInterval(()=>{service.tick().then(()=>{if(mailMode==='rehearsal')rehearsalMail.tick();syncActiveIntegrations();void gmail.tick();}).catch(()=>console.error('A background job failed; review the workspace activity.'));},400);
 let stopping=false;
-function stop(){if(stopping)return;stopping=true;clearInterval(timer);server.close(()=>{service.close();planner.close?.();placeResearch.close();bridge.close();process.exit(0);});}
+function stop(){if(stopping)return;stopping=true;clearInterval(timer);gmail.close();server.close(()=>{service.close();planner.close?.();placeResearch.close();bridge.close();process.exit(0);});}
 process.on('SIGINT',stop);process.on('SIGTERM',stop);

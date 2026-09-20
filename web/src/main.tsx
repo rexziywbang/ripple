@@ -37,6 +37,7 @@ import "./styles.css";
 import InlinePlan from "./InlinePlan";
 import ReviewQueue, { reviewGroups } from "./ReviewQueue";
 import EventConnections from "./EventConnections";
+import GmailApiConnection from "./GmailApiConnection";
 import InvitationPreview from "./InvitationPreview";
 import OperatingPlans from "./OperatingPlans";
 import WorkflowProgress from "./WorkflowProgress";
@@ -709,7 +710,7 @@ function App() {
                               <Check size={12} />
                             )}
                             {r.status === "delivered"
-                              ? "Delivered"
+                              ? /^Gmail\b/i.test(r.provider) ? "Sent" : "Delivered"
                               : r.status === "simulated"
                                 ? "Recorded"
                                 : r.status === "local"
@@ -721,7 +722,7 @@ function App() {
                         <h3>{r.title}</h3>
                         <p>{r.detail}</p>
                         <span className="receipt-provider">{r.provider}</span>
-                        {r.url && /^https:\/\//.test(r.url) && <a className="text-button" href={r.url} target="_blank" rel="noreferrer">View delivery<ExternalLink size={12} /></a>}
+                        {r.url && /^https:\/\//.test(r.url) && <a className="text-button" href={r.url} target="_blank" rel="noreferrer">{/^Gmail\b/i.test(r.provider) ? "View sent email" : "View delivery"}<ExternalLink size={12} /></a>}
                       </div>
                     ))}
                     {!state.receipts.length && (
@@ -770,7 +771,7 @@ function App() {
           )}
           {view === "connections" && (
             <>
-              <EventConnections key={state.project.id} projectId={state.project.id} />
+              <EventConnections key={state.project.id} projectId={state.project.id} gmailConnection={<GmailApiConnection />} />
             </>
           )}
         </div>

@@ -7,17 +7,18 @@ import { join } from 'node:path';
 import type { ProjectState } from '../shared/types.js';
 import { createLiveBridge } from '../server/live-bridge.js';
 import { createMailExtensionRouter, loadMailExtensionToken, MAIL_EXTENSION_WORKER } from '../server/mail-extension.js';
+import { writeGuestInvitation } from '../shared/invitation-copy.js';
 
 const cleanups: (() => Promise<void>)[] = [];
 const account = 'ripple-worker-test@gmail.com';
 const extensionOrigin = `chrome-extension://${'a'.repeat(32)}`;
-async function setup() {
+async function setup(sendingEnabled?: boolean) {
   const dir = mkdtempSync(join(tmpdir(), 'ripple-mail-worker-'));
   const bridge = createLiveBridge({ dbPath: ':memory:' });
   const proposal = { id: 'approved-email', kind: 'email', status: 'approved', version: 4 };
   const state = { proposals: [proposal] } as unknown as ProjectState;
   const app = express(); let reconciliations = 0;
-  app.use('/api/mail-worker', createMailExtensionRouter({ bridge, dataDir: dir, getState: () => state, reconcile: () => { reconciliations++; } }));
+  app.use('/api/mail-worker', createMailExtensionRouter({ bridge, dataDir: dir, getState: () => state, reconcile: () => { reconciliations++; }, sendingEnabled }));
   const server = await new Promise<Server>(resolve => { const listening = app.listen(0, '127.0.0.1', () => resolve(listening)); });
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing test listener');
   const base = `http://127.0.0.1:${address.port}/api/mail-worker`;
@@ -25,7 +26,7 @@ async function setup() {
   const post = (path: string, payload: object = {}, headers: Record<string,string> = {}) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, Origin: extensionOrigin, ...headers }, body: JSON.stringify({ workerId: MAIL_EXTENSION_WORKER, account, ...payload }) });
   const enqueue = (payload: object = {}) => bridge.enqueue({ projectId: 'event', provider: 'email', action: 'send_email', dedupeKey: 'approved-v4', revision: 4, payload: { proposalId: proposal.id, account, recipient: account, subject: 'Catering quote request', body: 'Please send a quote for our event.', ...payload } });
   cleanups.push(async () => { await new Promise<void>((resolve,reject) => server.close(error => error ? reject(error) : resolve())); bridge.close(); for (const file of readdirSync(dir)) unlinkSync(join(dir,file)); rmdirSync(dir); });
-  return { dir, base, token, bridge, proposal, post, enqueue, get reconciliations() { return reconciliations; } };
+  return { dir, base, token, bridge, state, proposal, post, enqueue, get reconciliations() { return reconciliations; } };
 }
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
 
@@ -98,5 +99,39 @@ describe('paired local Gmail worker', () => {
     expect(ctx.bridge.listJobs()[0]).toMatchObject({ status: 'failed' });
     expect(ctx.bridge.listJobs()[0].receipt).toBeUndefined();
     expect(await (await ctx.post('/claim')).json()).toBeNull();
+  });
+
+  it('leaves approved email queued when extension sending is disabled', async () => {
+    const ctx = await setup(false); const job = ctx.enqueue();
+    expect(await (await ctx.post('/status')).json()).toMatchObject({ ready: true, sendingEnabled: false, sendingProvider: 'gmail_api' });
+    expect(await (await ctx.post('/claim')).json()).toBeNull();
+    expect(ctx.bridge.listJobs()[0]).toMatchObject({ id: job.id, status: 'queued' });
+    expect(ctx.bridge.listJobs()[0].workerId).toBeUndefined();
+    expect(ctx.reconciliations).toBe(0);
+  });
+
+  it('blocks the final send check but still records an already attempted send', async () => {
+    const ctx = await setup(false); const job = ctx.enqueue();
+    ctx.bridge.claimById(job.id, MAIL_EXTENSION_WORKER);
+    const response = await ctx.post(`/jobs/${job.id}/before-send`);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining('Gmail API') });
+    expect(ctx.bridge.listJobs()[0].status).toBe('running');
+    const evidence = { detail: 'Gmail confirmed the earlier send.', verification: { method: 'gmail_sent_confirmation', subject: 'Catering quote request', recipient: account } };
+    expect((await ctx.post(`/jobs/${job.id}/complete`, evidence)).status).toBe(200);
+    expect(ctx.bridge.listJobs()[0].status).toBe('completed');
+  });
+
+  it('keeps approved Evite metadata claims available when email sending is disabled', async () => {
+    const ctx = await setup(false);
+    const eventUrl = 'https://www.evite.com/invitation/Approved123/preview';
+    const snapshot = { name: 'Dinner', date: '2026-12-11', time: '18:00', timezone: 'America/New_York', venue: 'Cambridge room', venueAddress: '1 Main Street', caterer: '', dietary: '', format: 'Seated dinner' };
+    ctx.bridge.configure('event', { emailDelivery: 'live', eviteEventUrl: eventUrl });
+    ctx.state.projects = [{ id: 'event' }] as ProjectState['projects'];
+    ctx.state.proposals.push({ id: 'invitation', kind: 'invitation', status: 'applied', version: 4, createdAt: '2026-09-20T10:00:00Z', invitationSnapshot: snapshot } as ProjectState['proposals'][number]);
+    const job = ctx.bridge.enqueue({ projectId: 'event', provider: 'evite', action: 'update_event', dedupeKey: 'approved-invitation', revision: 4, payload: { eventUrl, snapshot, proposalId: 'invitation', description: writeGuestInvitation(snapshot), metadataOnly: true, notifyGuests: false } });
+    const response = await fetch(ctx.base + '/evite/claim', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}`, Origin: extensionOrigin }, body: JSON.stringify({ workerId: 'ripple-evite-extension', eventUrl }) });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ id: job.id, status: 'running', workerId: 'ripple-evite-extension' });
   });
 });

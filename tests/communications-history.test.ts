@@ -35,11 +35,11 @@ describe('communication provenance and vendor state', () => {
     expect(summary.detail).toContain('queued');
     expect(summary.priced).toBe(false);
   });
-  it('requires a delivered receipt before calling a recorded request delivered', () => {
+  it('requires a sending receipt before calling a recorded request sent', () => {
     const record = { id: 'r', at: message.at, title: request.title, provider: 'Email', proposalId: request.id, detail: '' };
     const props = { project, proposals: [{ ...request, status: 'applied' as const }] };
     expect(vendorSummary({ ...props, receipts: [{ ...record, status: 'simulated' }] }).label).toBe('Quote request recorded');
-    expect(vendorSummary({ ...props, receipts: [{ ...record, status: 'delivered' }] }).detail).toContain('Request delivered');
+    expect(vendorSummary({ ...props, receipts: [{ ...record, status: 'delivered' }] }).detail).toContain('Request sent');
   });
   it('distinguishes a priced quote from a confirmed booking', () => {
     const quoted = vendorSummary({ project: { ...project, facts: { ...project.facts, cateringStatus: 'quoted' } }, proposals: [], receipts: [] });

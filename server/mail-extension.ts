@@ -9,7 +9,7 @@ import { gmailThreadKey, observedReplySchema, validateObservedReply, type Monito
 import { createEviteWorkerRouter } from './evite-worker.js';
 
 export const MAIL_EXTENSION_WORKER = 'ripple-mail-extension';
-type Options = { bridge: LiveBridge; dataDir: string; getState: (projectId: string) => ProjectState; reconcile: () => void; ingestReply?: (projectId: string, message: MonitoredMailMessage) => unknown };
+type Options = { bridge: LiveBridge; dataDir: string; getState: (projectId: string) => ProjectState; reconcile: () => void; ingestReply?: (projectId: string, message: MonitoredMailMessage) => unknown; sendingEnabled?: boolean };
 const accountSchema = z.string().trim().email().max(320);
 const workerSchema = z.object({ workerId: z.literal(MAIL_EXTENSION_WORKER), account: accountSchema });
 const localOrigin = (value: string) => /^http:\/\/(?:127\.0\.0\.1|localhost):(?:5173|8787)$/.test(value);
@@ -28,7 +28,7 @@ export function loadMailExtensionToken(dataDir: string): string {
 }
 
 /** Mount before the general origin guard; this router performs its own host, origin, and token checks. */
-export function createMailExtensionRouter({ bridge, dataDir, getState, reconcile, ingestReply }: Options): express.Router {
+export function createMailExtensionRouter({ bridge, dataDir, getState, reconcile, ingestReply, sendingEnabled = true }: Options): express.Router {
   const token = loadMailExtensionToken(dataDir);
   const router = express.Router();
   router.use((req, res, next) => {
@@ -72,7 +72,7 @@ export function createMailExtensionRouter({ bridge, dataDir, getState, reconcile
   const findJob = (id: string) => bridge.listJobs().find(job => job.id === id);
   router.post('/status', (req, res) => {
     workerSchema.strict().parse(req.body);
-    res.json({ ready: true, selfInboxOnly: false, demoRecipient: 'rexziyw@gmail.com', workerId: MAIL_EXTENSION_WORKER, replyMonitoring: !!ingestReply });
+    res.json({ ready: true, sendingEnabled, sendingProvider: sendingEnabled ? 'browser_extension' : 'gmail_api', selfInboxOnly: false, demoRecipient: 'rexziyw@gmail.com', workerId: MAIL_EXTENSION_WORKER, replyMonitoring: !!ingestReply });
   });
   router.post('/reply-targets', (req, res) => {
     const { account } = workerSchema.strict().parse(req.body);
@@ -99,7 +99,9 @@ export function createMailExtensionRouter({ bridge, dataDir, getState, reconcile
     res.json({ captured: true, externalId: message.externalId });
   });
   router.post('/claim', (req, res) => {
-    const { account } = workerSchema.strict().parse(req.body); reconcile();
+    const { account } = workerSchema.strict().parse(req.body);
+    if (!sendingEnabled) return res.json(null);
+    reconcile();
     const next = bridge.listJobs().find(job => job.provider === 'email' && job.status === 'queued');
     if (!next) return res.json(null);
     assertMail(next, account);
@@ -107,7 +109,9 @@ export function createMailExtensionRouter({ bridge, dataDir, getState, reconcile
     res.json(bridge.claimNext(MAIL_EXTENSION_WORKER, 'email') ?? null);
   });
   router.post('/jobs/:id/before-send', (req, res) => {
-    const { account } = workerSchema.strict().parse(req.body); reconcile();
+    const { account } = workerSchema.strict().parse(req.body);
+    if (!sendingEnabled) return res.status(409).json({ error: 'Extension email sending is disabled. Approved emails use the Gmail API.' });
+    reconcile();
     const job = assertMail(findJob(req.params.id), account, true);
     if (job.status !== 'running' || !currentApproval(job)) return res.status(409).json({ error: 'The approved message changed before sending. Nothing should be sent.' });
     res.json({ allowed: true, jobId: job.id });

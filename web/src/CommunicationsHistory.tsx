@@ -15,7 +15,7 @@ export function vendorSummary(state: VendorState) {
       return { label: "Quote request approved", detail: "The request is queued. New pricing is still pending.", priced: false };
     if (quoteRequest?.status === "applied") {
       const delivered = state.receipts.some(r => r.proposalId === quoteRequest.id && r.status === "delivered");
-      return { label: delivered ? "Waiting for quote" : "Quote request recorded", detail: delivered ? "Request delivered. The budget updates when the matching reply arrives." : "New pricing is pending; the budget remains incomplete.", priced: false };
+      return { label: delivered ? "Waiting for quote" : "Quote request recorded", detail: delivered ? "Request sent. The budget updates when the matching reply arrives." : "New pricing is pending; the budget remains incomplete.", priced: false };
     }
     return { label: quoteRequest?.status === "denied" ? "Quote request declined" : "Quote pending", detail: "No new catering price has been recorded.", priced: false };
   }

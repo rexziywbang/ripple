@@ -30,8 +30,9 @@ The published Grand Ballroom banquet capacity is **600**, so the selected room a
 From the `ripple` directory, run `npm run dev` if the app is not already running. Vite serves the interface on **5173** and the API on **8787**. Do not start a second instance or restart during the walkthrough. Backend changes require a deliberate restart; frontend edits can interrupt a presentation through hot reload.
 
 - Keep the prepared six-file folder available in Downloads. It matches the repository packet: `00 Event.json`, event brief, Garden Hall agreement, Marriott proposal, catering/staffing document, and equipment allowance.
-- Keep the saved Dropbox folder, Gmail account, and Evite destination configured. A new demo import copies the existing service destinations into a **new project**, enables that project's live email route, and uses **rexziyw@gmail.com**. Existing projects and their delivery settings are preserved.
-- Load or reload **Ripple Mail**, pair it, and **resume/enable** it before expecting delivery. Keep the intended signed-in Gmail tab and linked Evite **Review** page open. Reload provider tabs after extension changes. See the [extension setup](../extensions/ripple-mail/README.md); never paste its pairing token into chat or source control.
+- Keep the saved Dropbox folder, Gmail account, and Evite destination configured. A new demo import copies the existing service destinations into a **new project**. All ten existing projects now use the live test route to **rexziyw@gmail.com**; new manually created projects also inherit the configured route. Importing preserves the existing events.
+- **Gmail:** OAuth consent is complete and the intended account is connected with no attention state. Keep the API running. Gmail API is the only enabled sender; extension email sending is disabled (`sendingEnabled: false`), and no Gmail tab is required. See [Gmail API setup](gmail-api.md) for a fresh installation or deliberate reconnection.
+- **Evite:** load or reload **Ripple Mail**, pair it, and **resume/enable** it. Keep the linked, signed-in Evite **Review** page open and reload it after extension changes. See the [extension setup](../extensions/ripple-mail/README.md). The extension also remains the separate reply-monitoring path; Gmail OAuth here grants send permission, not inbox reading. Never paste pairing tokens or OAuth secrets into chat or source control.
 - The deterministic imported scenario makes no paid planning request. Other events retain their configured AI behavior. The demo should not be presented as a live model run.
 
 ## What counts as verified
@@ -40,20 +41,23 @@ From the `ripple` directory, run `npm run dev` if the app is not already running
 |---|---|
 | Folder import | The new event shows the six selected documents and their parsed planning facts. This proves a local import, not a Dropbox download. |
 | Consequence review | The selected Marriott identity, equipment decision, exact email draft, invitation snapshot, and forecast are visible before acceptance. |
-| Gmail | The exact approved recipient, subject, and body appear in Gmail Sent, and Ripple records a verified receipt. An approved or queued item alone is not delivery. |
+| Gmail | The API returns a message ID, Ripple records that send receipt, and the exact approved recipient, subject, and body can be confirmed in Gmail Sent. This proves accepted for sending, not recipient delivery or reading. An approved or queued item is not a send receipt. |
 | Evite | Reopen the linked invitation and verify the saved venue and description against the approved snapshot, with a matching completed receipt. This adapter updates metadata only; it does not send guest invitations or change the event's date/time. |
 | Dropbox output | Open the configured remote folder and verify the intended file/version. Local exports, staged files, and queued bridge jobs do not prove upload. |
 
-The browser rehearsal verified folder import, the exact `marriot` sentence, selection of Boston Marriott Cambridge, the animated dependency path, the four-item summary, **Accept all**, updated planning files, and the final **$14,000** forecast. The full test suite passed: **682 tests in 60 files**, followed by a successful production build.
+The browser rehearsal verified folder import, the exact `marriot` sentence, selection of Boston Marriott Cambridge, the animated dependency path, the four-item summary, **Accept all**, updated planning files, and the final **$14,000** forecast. The latest local verification passed **707 tests in 62 files** and the production build.
 
-This walkthrough's approved Gmail and Evite jobs remain **queued**, so neither external result is verified yet. Gmail Sent had no matching message, and Evite still showed Garden Hall. Reloading and resuming the paired extension is the remaining live-delivery prerequisite. A configured URL is not evidence that synchronization has finished.
+Live OAuth is connected. At **2026-09-20T07:57:42.495Z**, worker `ripple-gmail-api` completed job `0666e8f7-2aa4-4809-8564-01e41f0375e5`: **Christmas dinner: New delivery location** to **rexziyw@gmail.com**, with Google message ID `1a0bdd22923b9e3e`. **API acceptance and Gmail Sent are verified**: the sender, recipient, subject and full body match the approved Marriott/50 Broadway/200-guest snapshot. Recipient delivery is not verified. Earlier failed extension attempts were not retried; this approved job was sent once.
+
+Evite's update remains unverified and requires the paired, resumed browser extension. Gmail's successful send does not establish an Evite update or a Dropbox upload.
 
 ## If something pauses
 
 - **Venue search:** the exact sentence above is normalized to `marriot`; the local named lookup returns Boston Marriott Cambridge first. The presentation does not wait for a paid web search.
 - **No Dropbox connection:** use the offered local folder upload. Do not imply that a new OAuth connection occurred.
 - **A review becomes stale:** return to the latest summary and inspect it again. Do not retry acceptance with old tokens or approve unseen follow-up work.
-- **Email/Evite remains queued:** check that the extension is paired and enabled and that its selected tabs are signed in. Leave the work queued until execution is verified.
+- **Gmail remains queued:** check the connected account and any `needsAttention` state in [Gmail status](http://127.0.0.1:8787/api/gmail/status), the running API, and the event's matching live-email route. Finish OAuth if needed. Existing approved work must not be reapproved merely to trigger sending.
+- **Evite remains queued:** check that the extension is paired and enabled and the linked Review page is signed in. Gmail API connection does not execute Evite updates. Leave the work queued until execution is verified.
 - **An external save/send is uncertain:** inspect the provider and the exact job before retrying. Do not fabricate completion receipts or reapprove a message to force progress; a send may already have happened.
 
 Use the new imported event for each rehearsal. Do not reset or delete the user's existing events.

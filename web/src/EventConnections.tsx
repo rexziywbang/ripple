@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { CalendarDays, Check, ExternalLink, Folder, LoaderCircle, Mail, PartyPopper, Ticket } from 'lucide-react';
 import DropboxConnection from './DropboxConnection';
 import './event-connections.css';
@@ -42,7 +42,7 @@ export function connectionRows(config: EventIntegrationConfig) {
     return { ...provider, url: linked ? url : undefined, status: linked ? 'Linked' : provider.id === 'email' && config.mailMode === 'rehearsal' ? 'Ready locally' : 'Not linked' };
   });
 }
-export default function EventConnections({ projectId }: { projectId: string }) {
+export default function EventConnections({ projectId, gmailConnection }: { projectId: string; gmailConnection?: ReactNode }) {
   const [config, setConfig] = useState<EventIntegrationConfig | null>(null);
   const [loadedProject, setLoadedProject] = useState('');
   const [error, setError] = useState('');
@@ -64,9 +64,10 @@ export default function EventConnections({ projectId }: { projectId: string }) {
     <section className="ec-panel" aria-labelledby="ec-title">
       <header className="ec-heading"><h2 id="ec-title">Connections</h2></header>
       <DropboxConnection key={projectId} projectId={projectId} onSaved={() => setAttempt(value => value + 1)} />
+      {gmailConnection}
       {error && <div className="ec-error" role="alert">{error}<button onClick={() => setAttempt(value => value + 1)}>Try again</button></div>}
       <div className="ec-providers" aria-busy={!current && !error}>
-        {connectionRows(current || {}).filter(provider => provider.id !== 'dropbox').map(({ id, name, role, Icon, status, url }) => (
+        {connectionRows(current || {}).filter(provider => provider.id !== 'dropbox' && !(gmailConnection && provider.id === 'email')).map(({ id, name, role, Icon, status, url }) => (
           <div className="ec-provider" key={id}>
             <span className="ec-icon"><Icon size={17} strokeWidth={1.65} aria-hidden="true" /></span>
             <div className="ec-provider-copy"><h3>{name}</h3><p>{role}</p></div>
@@ -78,7 +79,7 @@ export default function EventConnections({ projectId }: { projectId: string }) {
           </div>
         ))}
       </div>
-      <p className="ec-footnote">{current?.mailMode === 'rehearsal' ? 'Email stays in Ripple. Linked event pages use the local browser bridge.' : 'Linked destinations update through the local browser bridge.'}</p>
+      <p className="ec-footnote">{gmailConnection ? 'Linked event pages use the local browser bridge.' : current?.mailMode === 'rehearsal' ? 'Email stays in Ripple. Linked event pages use the local browser bridge.' : 'Linked destinations update through the local browser bridge.'}</p>
     </section>
   );
 }
